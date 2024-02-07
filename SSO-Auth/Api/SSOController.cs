@@ -96,6 +96,7 @@ public class SSOController : ControllerBase
     // Actually a GET: https://github.com/IdentityModel/IdentityModel.OidcClient/issues/325
     [HttpGet("OID/r/{provider}")]
     [HttpGet("OID/redirect/{provider}")]
+    [ResponseCache(Location = ResponseCacheLocation.None, NoStore = true)]
     public async Task<ActionResult> OidPost(
         [FromRoute] string provider,
         [FromQuery] string state) // Although this is a GET function, this function is called `Post` for consistency with SAML
@@ -867,6 +868,7 @@ public class SSOController : ControllerBase
     /// <returns>A webpage that will complete the client-side flow.</returns>
     [HttpPost("SAML/p/{provider}")]
     [HttpPost("SAML/post/{provider}")]
+    [ResponseCache(Location = ResponseCacheLocation.None, NoStore = true)]
     public ActionResult SamlPost(string provider, [FromQuery] string relayState = null)
     {
         SamlConfig config;
