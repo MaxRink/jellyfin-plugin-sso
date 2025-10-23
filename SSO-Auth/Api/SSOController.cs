@@ -1549,6 +1549,44 @@ public class SSOController : ControllerBase
         return userId;
     }
 
+    /// <summary>
+    /// Loads an avatar either from an inline data: URL or by downloading it.
+    /// </summary>
+    /// <param name="avatarUrl">The avatar URL from the provider.</param>
+    /// <returns>The image bytes and their content type.</returns>
+    private async Task<(MemoryStream Stream, string ContentType)> LoadAvatar(string avatarUrl)
+    {
+        if (avatarUrl.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+        {
+            // Providers such as Kanidm and Pocket ID hand the picture out inline.
+            var base64Data = avatarUrl.Substring(avatarUrl.IndexOf(',', StringComparison.Ordinal) + 1);
+            var contentType = avatarUrl.Substring(5, avatarUrl.IndexOf(';', StringComparison.Ordinal) - 5);
+            return (new MemoryStream(Convert.FromBase64String(base64Data)), contentType);
+        }
+
+        using var client = _httpClientFactory.CreateClient();
+
+        System.Reflection.Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
+        System.Diagnostics.FileVersionInfo fvi = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
+        string version = fvi.FileVersion;
+        client.DefaultRequestHeaders.UserAgent.ParseAdd($"Jellyfin-Plugin-SSO-Auth +{version} (https://github.com/9p4/jellyfin-plugin-sso)");
+
+        using var avatarResponse = await client.GetAsync(avatarUrl).ConfigureAwait(false);
+
+        if (!avatarResponse.Content.Headers.TryGetValues("content-type", out var contentTypeList))
+        {
+            throw new Exception("Cannot get Content-Type of image : " + avatarUrl);
+        }
+
+        var downloadedContentType = contentTypeList.First();
+        if (!downloadedContentType.StartsWith("image", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception("Content type of avatar URL is not an image, got :  " + downloadedContentType);
+        }
+
+        return (new MemoryStream(await avatarResponse.Content.ReadAsByteArrayAsync().ConfigureAwait(false)), downloadedContentType);
+    }
+
     private static bool UsernameAdoptionDisabled(string mode, string provider)
     {
         return mode switch
@@ -1919,28 +1957,10 @@ public class SSOController : ControllerBase
         {
             try
             {
-                using var client = _httpClientFactory.CreateClient();
-
-                System.Reflection.Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
-                System.Diagnostics.FileVersionInfo fvi = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
-                string version = fvi.FileVersion;
-                client.DefaultRequestHeaders.UserAgent.ParseAdd($"Jellyfin-Plugin-SSO-Auth +{version} (https://github.com/9p4/jellyfin-plugin-sso)");
-
-                using var avatarResponse = await client.GetAsync(avatarUrl).ConfigureAwait(false);
-
-                if (!avatarResponse.Content.Headers.TryGetValues("content-type", out var contentTypeList))
-                {
-                    throw new Exception("Cannot get Content-Type of image : " + avatarUrl);
-                }
-
-                var contentType = contentTypeList.First();
-                if (!contentType.StartsWith("image", StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new Exception("Content type of avatar URL is not an image, got :  " + contentType);
-                }
-
+                var avatar = await LoadAvatar(avatarUrl).ConfigureAwait(false);
+                using var stream = avatar.Stream;
+                var contentType = avatar.ContentType;
                 var extension = contentType.Split("/").Last();
-                using var stream = await avatarResponse.Content.ReadAsStreamAsync().ConfigureAwait(false);
 
                 if (user != null)
                 {
