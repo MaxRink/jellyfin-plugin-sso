@@ -26,6 +26,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.Net.Http.Headers;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -571,6 +572,288 @@ public class SSOController : ControllerBase
         }
 
         return Problem("Something went wrong");
+    }
+
+    /// <summary>
+    /// Authenticates a user via an id_token obtained from the OAuth2 device code flow.
+    /// Validates the JWT against the provider's JWKS and applies the same role/folder logic as the redirect flow.
+    /// </summary>
+    /// <param name="provider">Name of the OID provider to authenticate against.</param>
+    /// <param name="request">The device auth request containing the id_token and client device info.</param>
+    /// <returns>A Jellyfin authentication result on success.</returns>
+    [HttpPost("OID/DeviceAuth/{provider}")]
+    [Consumes(MediaTypeNames.Application.Json)]
+    [Produces(MediaTypeNames.Application.Json)]
+    public async Task<ActionResult> OidDeviceAuth(string provider, [FromBody] DeviceAuthRequest request)
+    {
+        OidConfig config;
+        try
+        {
+            config = SSOPlugin.Instance.Configuration.OidConfigs[provider];
+        }
+        catch (KeyNotFoundException)
+        {
+            return BadRequest("No matching provider found");
+        }
+
+        if (!config.Enabled)
+        {
+            return BadRequest("Provider is not enabled");
+        }
+
+        if (string.IsNullOrEmpty(request?.IdToken))
+        {
+            return BadRequest("Missing id_token");
+        }
+
+        try
+        {
+            using var httpClient = _httpClientFactory.CreateClient();
+
+            // Fetch OIDC discovery document to get issuer and JWKS URI
+            var discoveryUrl = config.OidEndpoint?.Trim().TrimEnd('/') + "/.well-known/openid-configuration";
+            var discoveryJson = await httpClient.GetStringAsync(discoveryUrl).ConfigureAwait(false);
+            var discovery = JsonConvert.DeserializeObject<JObject>(discoveryJson);
+
+            var jwksUri = discovery["jwks_uri"]?.ToString();
+            var issuer = discovery["issuer"]?.ToString();
+
+            if (string.IsNullOrEmpty(jwksUri))
+            {
+                return Problem("Could not determine JWKS URI from provider discovery document");
+            }
+
+            // Fetch JWKS and build signing keys
+            var jwksJson = await httpClient.GetStringAsync(jwksUri).ConfigureAwait(false);
+            var jwks = new Microsoft.IdentityModel.Tokens.JsonWebKeySet(jwksJson);
+
+            var validationParams = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+            {
+                ValidIssuer = issuer,
+                ValidAudience = config.OidClientId?.Trim(),
+                IssuerSigningKeys = jwks.GetSigningKeys(),
+                ValidateIssuer = !config.DoNotValidateIssuerName,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.FromSeconds(30),
+            };
+
+            var handler = new JsonWebTokenHandler();
+            var tokenResult = await handler.ValidateTokenAsync(request.IdToken, validationParams).ConfigureAwait(false);
+
+            if (!tokenResult.IsValid)
+            {
+                _logger.LogWarning("Device auth JWT validation failed for provider {Provider}: {Exception}", provider, tokenResult.Exception?.Message);
+                return StatusCode(StatusCodes.Status401Unauthorized, "Invalid or expired token");
+            }
+
+            var claims = tokenResult.ClaimsIdentity.Claims.ToList();
+
+            // Apply the same username and role extraction logic as the redirect flow
+            string username = null;
+            bool valid = false;
+            bool isAdmin = false;
+            var folders = new List<string>();
+            bool enableLiveTv = config.EnableLiveTv;
+            bool enableLiveTvManagement = config.EnableLiveTvManagement;
+            string avatarUrl = null;
+
+            if (!config.EnableFolderRoles && config.EnabledFolders != null)
+            {
+                folders = new List<string>(config.EnabledFolders);
+            }
+
+            if (config.AvatarUrlFormat is not null)
+            {
+                avatarUrl = claims.Aggregate(
+                    config.AvatarUrlFormat,
+                    (s, claim) => s.Contains($"@{{{claim.Type}}}") ? s.Replace($"@{{{claim.Type}}}", claim.Value) : s);
+            }
+
+            string[] segments = string.IsNullOrEmpty(config.RoleClaim)
+                ? Array.Empty<string>()
+                : Regex.Split(config.RoleClaim.Trim(), "(?<!\\\\)\\.");
+
+            if (segments.Any())
+            {
+                segments = segments.Select(i => i.Replace("\\.", ".")).ToArray();
+            }
+
+            foreach (var claim in claims)
+            {
+                if (claim.Type == (config.DefaultUsernameClaim?.Trim() ?? "preferred_username"))
+                {
+                    username = claim.Value;
+                    if (config.Roles == null || config.Roles.Length == 0)
+                    {
+                        valid = true;
+                    }
+                }
+
+                if (segments.Any() && claim.Type == segments[0])
+                {
+                    List<string> roles;
+                    if (segments.Length == 1)
+                    {
+                        roles = new List<string> { claim.Value };
+                    }
+                    else
+                    {
+                        var json = JsonConvert.DeserializeObject<IDictionary<string, object>>(claim.Value);
+                        if (json is null)
+                        {
+                            roles = new List<string>();
+                        }
+                        else
+                        {
+                            bool missingSegment = false;
+                            for (int i = 1; i < segments.Length - 1; i++)
+                            {
+                                var segment = segments[i];
+                                if (!json.TryGetValue(segment, out var nextToken) || nextToken is not JObject nextObject)
+                                {
+                                    missingSegment = true;
+                                    break;
+                                }
+
+                                json = nextObject.ToObject<IDictionary<string, object>>();
+                                if (json is null)
+                                {
+                                    missingSegment = true;
+                                    break;
+                                }
+                            }
+
+                            if (missingSegment || !json.TryGetValue(segments[^1], out var rolesToken) || rolesToken is not JArray rolesArray)
+                            {
+                                roles = new List<string>();
+                            }
+                            else
+                            {
+                                roles = rolesArray.ToObject<List<string>>();
+                            }
+                        }
+                    }
+
+                    foreach (string role in roles)
+                    {
+                        if (config.Roles != null && config.Roles.Any())
+                        {
+                            foreach (string validRole in config.Roles)
+                            {
+                                if (role.Equals(validRole))
+                                {
+                                    valid = true;
+                                }
+                            }
+                        }
+
+                        if (config.AdminRoles != null && config.AdminRoles.Any())
+                        {
+                            foreach (string adminRole in config.AdminRoles)
+                            {
+                                if (role.Equals(adminRole))
+                                {
+                                    isAdmin = true;
+                                }
+                            }
+                        }
+
+                        if (config.EnableFolderRoles)
+                        {
+                            foreach (FolderRoleMap folderRoleMap in config.FolderRoleMapping)
+                            {
+                                if (role.Equals(folderRoleMap.Role?.Trim()))
+                                {
+                                    folders.AddRange(folderRoleMap.Folders);
+                                }
+                            }
+                        }
+
+                        if (config.EnableLiveTvRoles)
+                        {
+                            if (config.LiveTvRoles != null && config.LiveTvRoles.Any())
+                            {
+                                foreach (string liveTvRole in config.LiveTvRoles)
+                                {
+                                    if (role.Equals(liveTvRole))
+                                    {
+                                        enableLiveTv = true;
+                                    }
+                                }
+                            }
+
+                            if (config.LiveTvManagementRoles != null && config.LiveTvManagementRoles.Any())
+                            {
+                                foreach (string liveTvMgmtRole in config.LiveTvManagementRoles)
+                                {
+                                    if (role.Equals(liveTvMgmtRole))
+                                    {
+                                        enableLiveTvManagement = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Fallback to "sub" claim if no preferred_username claim found or roles insufficient
+            if (!valid)
+            {
+                foreach (var claim in claims)
+                {
+                    if (claim.Type == "sub")
+                    {
+                        username = claim.Value;
+                        if (config.Roles == null || config.Roles.Length == 0)
+                        {
+                            valid = true;
+                        }
+                    }
+                }
+            }
+
+            if (!valid)
+            {
+                _logger.LogWarning(
+                    "Device auth user {Username} has insufficient roles. Claims: {@Claims}. Expected any of: {@ExpectedRoles}",
+                    username,
+                    claims.Select(c => new { c.Type, c.Value }),
+                    config.Roles);
+                return StatusCode(StatusCodes.Status401Unauthorized, "Error. Check permissions.");
+            }
+
+            var authResponse = new AuthResponse
+            {
+                DeviceID = request.DeviceID,
+                DeviceName = request.DeviceName,
+                AppName = request.AppName,
+                AppVersion = request.AppVersion,
+            };
+
+            var userId = await CreateCanonicalLinkAndUserIfNotExist("oid", provider, username).ConfigureAwait(false);
+            var authenticationResult = await Authenticate(
+                userId,
+                isAdmin,
+                config.EnableAuthorization,
+                config.EnableAllFolders,
+                folders.ToArray(),
+                enableLiveTv,
+                enableLiveTvManagement,
+                authResponse,
+                config.DefaultProvider?.Trim(),
+                avatarUrl,
+                config.PreserveAdminPermissions)
+                .ConfigureAwait(false);
+
+            return Ok(authenticationResult);
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Error during device auth for provider {Provider}", provider);
+            return Problem("Authentication failed");
+        }
     }
 
     /// <summary>
@@ -1410,6 +1693,37 @@ public class SSOController : ControllerBase
         errorResult.StatusCode = code;
         return errorResult;
     }
+}
+
+/// <summary>
+/// The request body for the device code flow authentication endpoint.
+/// </summary>
+public class DeviceAuthRequest
+{
+    /// <summary>
+    /// Gets or sets the id_token obtained from the device code token endpoint.
+    /// </summary>
+    public string IdToken { get; set; }
+
+    /// <summary>
+    /// Gets or sets the device ID of the client.
+    /// </summary>
+    public string DeviceID { get; set; }
+
+    /// <summary>
+    /// Gets or sets the device name of the client.
+    /// </summary>
+    public string DeviceName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the app name of the client.
+    /// </summary>
+    public string AppName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the app version of the client.
+    /// </summary>
+    public string AppVersion { get; set; }
 }
 
 /// <summary>
