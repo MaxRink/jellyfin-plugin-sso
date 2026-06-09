@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 
 namespace Jellyfin.Plugin.SSO_Auth;
@@ -568,8 +569,9 @@ const sleep = (milliseconds) => {
     /// <param name="baseUrl">The base URL of the Jellyfin installation.</param>
     /// <param name="mode">The mode of the function; SAML or OID.</param>
     /// <param name="isLinking">Whether or not this request is to link accounts (Rather than authenticate).</param>
+    /// <param name="quickConnectCode">Optional Jellyfin Quick Connect code to prefill after authentication.</param>
     /// <returns>A string with the HTML to serve to the client.</returns>
-    public static string Generator(string data, string provider, string baseUrl, string mode, bool isLinking = false)
+    public static string Generator(string data, string provider, string baseUrl, string mode, bool isLinking = false, string quickConnectCode = null)
     {
         // Strip out the protocol (http:// or https://) and convert the domain to Punycode
         var idnMapping = new IdnMapping();
@@ -578,6 +580,9 @@ const sleep = (milliseconds) => {
         var domain = baseUrl.Substring(protocolSeparatorIndex + 2);
         var punycodeDomain = idnMapping.GetAscii(domain);
         var punycodeBaseUrl = protocol + punycodeDomain;
+        var finalRedirectPath = string.IsNullOrWhiteSpace(quickConnectCode)
+            ? "/web/index.html"
+            : "/web/index.html#!/quickconnect?code=" + Uri.EscapeDataString(quickConnectCode);
 
         return Base + @"
 async function link(request) {
@@ -722,10 +727,13 @@ async function main() {
         // Navigate the top-level frame to the web client. It boots authenticated and POSTs
         // Sessions/Capabilities/Full, which the native Android app intercepts to read these
         // credentials and complete native login. Browsers simply resume the session here.
-        window.location.replace('" + punycodeBaseUrl + @"/web/index.html');
+        // When a Quick Connect code was carried through the login, redirect to the Quick
+        // Connect page so it is prefilled and confirmed automatically.
+        window.location.replace('" + punycodeBaseUrl + finalRedirectPath + @"');
     } catch (err) {
         showError(err && err.message ? err.message : String(err));
     }
+
 }
 
 document.addEventListener('DOMContentLoaded', function () {
