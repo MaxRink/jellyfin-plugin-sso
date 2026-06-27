@@ -885,14 +885,28 @@ public class SSOController : ControllerBase
             userId = Guid.Empty;
         }
 
-        // No userId found? Let's try and find the user by name instead
-        if (userId == Guid.Empty)
-        {
-            user = _userManager.GetUserByName(canonicalName);
-        }
-        else
+        // If a link exists, try to resolve the user it points to.
+        if (userId != Guid.Empty)
         {
             user = _userManager.GetUserById(userId);
+
+            // The link points to a user that no longer exists. This happens when the user's
+            // GUID changes out from under us (e.g. across a Jellyfin database migration such
+            // as the one in 10.11). Drop the stale link so we fall back to a name lookup
+            // below instead of incorrectly trying to create a user that already exists.
+            if (user == null)
+            {
+                _logger.LogWarning($"SSO canonical link for {canonicalName} points to missing user {userId}; removing stale link");
+                var staleLinks = GetCanonicalLinks(mode, provider);
+                staleLinks.Remove(canonicalName);
+                UpdateCanonicalLinkConfig(staleLinks, mode, provider);
+            }
+        }
+
+        // No (valid) userId found? Let's try and find the user by name instead.
+        if (user == null)
+        {
+            user = _userManager.GetUserByName(canonicalName);
         }
 
         if (user == null)
@@ -919,9 +933,10 @@ public class SSOController : ControllerBase
             userId = Guid.Empty;
         }
 
-        if (userId == Guid.Empty)
+        // Create the link if it is missing, or repair it if it points at the wrong user.
+        if (userId != user.Id)
         {
-            _logger.LogInformation("SSO user link doesn't exist, creating...");
+            _logger.LogInformation("SSO user link doesn't exist or is outdated, creating...");
             userId = user.Id;
             CreateCanonicalLink(mode, provider, userId, canonicalName);
         }
