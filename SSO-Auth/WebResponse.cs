@@ -459,51 +459,113 @@ async function link(request) {
     })
 }
 
-async function main() {
-    localStorage.removeItem('jellyfin_credentials');
-    document.getElementById('iframe-main').src = '" + punycodeBaseUrl + @"/web/index.html';
-
-    var data = '" + data + @"';
-    while (localStorage.getItem(""_deviceId2"") == null ||
-        localStorage.getItem(""jellyfin_credentials"") == null ||
-        JSON.parse(localStorage.getItem(""jellyfin_credentials""))['Servers'][0]['Id'] == null) {
-        // If localStorage isn't initialized yet, try again.
-        await sleep(100);
+function generateDeviceId() {
+    try {
+        var bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes, function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    } catch (e) {
+        return 'sso-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
     }
-    var deviceId = localStorage.getItem(""_deviceId2"");
-    var appName = ""Jellyfin Web"";
-    var appVersion = ""10.8.0"";
-    var deviceName = getDeviceName();
+}
 
-    var request = {deviceId, appName, appVersion, deviceName, data};
+function showError(message) {
+    var status = document.querySelector('p');
+    if (status != null) {
+        status.textContent = 'Login failed: ' + message;
+    }
+    console.error('SSO login failed:', message);
+}
 
-    if (" + $"{isLinking}".ToLower() + @") await link(request);
+async function main() {
+    try {
+        var data = '" + data + @"';
 
-    var url = '" + punycodeBaseUrl + "/sso/" + mode + "/Auth/" + provider + @"';
+        // Reuse the web client's existing device id and server entry when present so the
+        // session we create matches what the app/browser already knows about this server.
+        // We deliberately do NOT boot the web client in an iframe to seed these: in the
+        // native Android app the iframed client never populates Servers[0], which left the
+        // old polling loop spinning forever. Constructing the credentials directly works in
+        // browsers and the app alike.
+        var existingCredentialsString = localStorage.getItem(""jellyfin_credentials"");
 
-    let response = await new Promise(resolve => {
-       var xhr = new XMLHttpRequest();
-       xhr.open('POST', url, true);
-       xhr.setRequestHeader('Content-Type', 'application/json');
-       xhr.setRequestHeader('Accept', 'application/json');
-       xhr.onload = function(e) {
-         resolve(xhr.response);
-       };
-       xhr.onerror = function () {
-         resolve(undefined);
-       };
-       xhr.send(JSON.stringify(request));
-    })
-    var responseJson = JSON.parse(response);
-    var userId = 'user-' + responseJson['User']['Id'] + '-' + responseJson['User']['ServerId'];
-    responseJson['User']['EnableAutoLogin'] = true;
-    localStorage.setItem(userId, JSON.stringify(responseJson['User']));
-    var jfCreds = JSON.parse(localStorage.getItem('jellyfin_credentials'));
-    jfCreds['Servers'][0]['AccessToken'] = responseJson['AccessToken'];
-    jfCreds['Servers'][0]['UserId'] = responseJson['User']['Id'];
-    localStorage.setItem('jellyfin_credentials', JSON.stringify(jfCreds));
-    localStorage.setItem('enableAutoLogin', 'true');
-    window.location.replace('" + punycodeBaseUrl + @"/web/index.html');
+        var deviceId = localStorage.getItem(""_deviceId2"");
+        if (deviceId == null) {
+            deviceId = generateDeviceId();
+            localStorage.setItem(""_deviceId2"", deviceId);
+        }
+
+        var appName = ""Jellyfin Web"";
+        var appVersion = ""10.8.0"";
+        var deviceName = getDeviceName();
+
+        var request = {deviceId, appName, appVersion, deviceName, data};
+
+        if (" + $"{isLinking}".ToLower() + @") await link(request);
+
+        var url = '" + punycodeBaseUrl + "/sso/" + mode + "/Auth/" + provider + @"';
+
+        let response = await new Promise((resolve, reject) => {
+           var xhr = new XMLHttpRequest();
+           xhr.open('POST', url, true);
+           xhr.setRequestHeader('Content-Type', 'application/json');
+           xhr.setRequestHeader('Accept', 'application/json');
+           xhr.onload = function(e) {
+             if (xhr.status >= 200 && xhr.status < 300) {
+               resolve(xhr.response);
+             } else {
+               reject(new Error('server returned ' + xhr.status + ' ' + (xhr.response || '')));
+             }
+           };
+           xhr.onerror = function () {
+             reject(new Error('could not reach the server'));
+           };
+           xhr.send(JSON.stringify(request));
+        });
+
+        var responseJson = JSON.parse(response);
+        var serverId = responseJson['User']['ServerId'];
+        var jellyfinUserId = responseJson['User']['Id'];
+        var accessToken = responseJson['AccessToken'];
+
+        // Persist the per-user entry the web client keys by user.
+        responseJson['User']['EnableAutoLogin'] = true;
+        localStorage.setItem('user-' + jellyfinUserId + '-' + serverId, JSON.stringify(responseJson['User']));
+
+        // Build jellyfin_credentials from the auth response. Keep the existing server
+        // entry's shape if there is one and only inject the authenticated fields.
+        var credentials;
+        try {
+            credentials = JSON.parse(existingCredentialsString);
+        } catch (e) {
+            credentials = null;
+        }
+        if (credentials == null || credentials['Servers'] == null || credentials['Servers'][0] == null) {
+            credentials = { Servers: [{}] };
+        }
+
+        var serverEntry = credentials['Servers'][0];
+        serverEntry['Id'] = serverId;
+        if (serverEntry['ManualAddress'] == null) {
+            serverEntry['ManualAddress'] = '" + punycodeBaseUrl + @"';
+        }
+        serverEntry['AccessToken'] = accessToken;
+        serverEntry['UserId'] = jellyfinUserId;
+        serverEntry['DateLastAccessed'] = Date.now();
+        if (serverEntry['LastConnectionMode'] == null) {
+            serverEntry['LastConnectionMode'] = 2; // ConnectionMode.Manual
+        }
+
+        localStorage.setItem('jellyfin_credentials', JSON.stringify(credentials));
+        localStorage.setItem('enableAutoLogin', 'true');
+
+        // Navigate the top-level frame to the web client. It boots authenticated and POSTs
+        // Sessions/Capabilities/Full, which the native Android app intercepts to read these
+        // credentials and complete native login. Browsers simply resume the session here.
+        window.location.replace('" + punycodeBaseUrl + @"/web/index.html');
+    } catch (err) {
+        showError(err && err.message ? err.message : String(err));
+    }
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -511,6 +573,6 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 // https://stackoverflow.com/a/25435165
-</script><iframe id='iframe-main' class='docs-texteventtarget-iframe' sandbox='allow-same-origin allow-forms allow-scripts' src='' style='position: absolute;width:0;height:0;border:0;'></iframe></body></html>";
+</script></body></html>";
     }
 }

@@ -8,7 +8,7 @@ owner: "MaxRink"
 overview: "Authenticate users against an SSO provider."
 description: |
   This plugin allows users to sign in through an SSO provider (such as Google, Facebook, or your own provider). This enables one-click signin.
-  Review documentation at https://github.com/9p4/jellyfin-plugin-sso
+  Review documentation at https://github.com/MaxRink/jellyfin-plugin-sso
 category: "Authentication"
 artifacts:
   - "SSO-Auth.dll"
@@ -16,6 +16,8 @@ artifacts:
   - "Duende.IdentityModel.dll"
 changelog: |
   6.0.0.0: Jellyfin 12 support (net10.0, targetAbi 12.0.0.0). Migrated to Jellyfin.Controller/Model 12.0.0-rc2. Removed the vulnerable System.Security.Cryptography.Xml package (now provided by the net10 shared framework). Adopted fixes and features from community forks (see README Acknowledgements).
+  5.0.0.0: Overhaul the auth handoff so SSO login works in the native Jellyfin mobile apps (Android & iOS Expo), not just the web UI. Credentials are now built directly from the auth response and applied in the top frame instead of polling an iframed web client's localStorage, which never completed inside the native apps. Failures now surface an error instead of hanging on "Logging in...".
+  4.0.0.5: Fix login on Jellyfin 10.11 when canonical links point to a stale user GUID (#315)
   4.0.0.4: Fix security issue in SAML
   4.0.0.0: Jellyfin 10.11
   3.5.3.0: Allow for OID-provided avatars, various bugfixes and workarounds

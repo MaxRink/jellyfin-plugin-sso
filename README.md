@@ -2,27 +2,27 @@
 
 <p align="center">
 
-<img alt="Logo" src="https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/main/img/logo.png"/>
+<img alt="Logo" src="https://raw.githubusercontent.com/AlexBocken/jellyfin-plugin-sso/main/img/logo.png"/>
 <br/>
 <br/>
-<a href="https://github.com/9p4/jellyfin-plugin-sso">
-<img alt="GPL 3.0 License" src="https://img.shields.io/github/license/9p4/jellyfin-plugin-sso.svg"/>
+<a href="https://github.com/AlexBocken/jellyfin-plugin-sso">
+<img alt="GPL 3.0 License" src="https://img.shields.io/github/license/AlexBocken/jellyfin-plugin-sso.svg"/>
 </a>
-<a href="https://github.com/9p4/jellyfin-plugin-sso/actions/workflows/dotnet.yml">
-<img alt="GitHub Actions Build Status" src="https://github.com/9p4/jellyfin-plugin-sso/actions/workflows/dotnet.yml/badge.svg"/>
+<a href="https://github.com/AlexBocken/jellyfin-plugin-sso/actions/workflows/dotnet.yml">
+<img alt="GitHub Actions Build Status" src="https://github.com/AlexBocken/jellyfin-plugin-sso/actions/workflows/dotnet.yml/badge.svg"/>
 </a>
-<a href="https://github.com/9p4/jellyfin-plugin-sso/releases">
-<img alt="Current Release" src="https://img.shields.io/github/release/9p4/jellyfin-plugin-sso.svg"/>
+<a href="https://github.com/AlexBocken/jellyfin-plugin-sso/releases">
+<img alt="Current Release" src="https://img.shields.io/github/release/AlexBocken/jellyfin-plugin-sso.svg"/>
 </a>
-<a href="https://github.com/9p4/jellyfin-plugin-sso/releases.atom">
+<a href="https://github.com/AlexBocken/jellyfin-plugin-sso/releases.atom">
 <img alt="Release RSS Feed" src="https://img.shields.io/badge/rss-releases-ffa500?logo=rss" />
 </a>
-<a href="https://github.com/9p4/jellyfin-plugin-sso/commits/main.atom">
+<a href="https://github.com/AlexBocken/jellyfin-plugin-sso/commits/main.atom">
 <img alt="Main Commits RSS Feed" src="https://img.shields.io/badge/rss-commits-ffa500?logo=rss" />
 </a>
 </p>
 
-Project archived because I'm tired of working on this after all the years.
+> **Note:** The original project at [9p4/jellyfin-plugin-sso](https://github.com/9p4/jellyfin-plugin-sso) has been archived by its author. This repository ([AlexBocken/jellyfin-plugin-sso](https://github.com/AlexBocken/jellyfin-plugin-sso)) is a maintained fork that continues development. Install it using **our** plugin manifest (see [Installing](#installing) below).
 
 This plugin allows users to sign in through an SSO provider (such as Google, Microsoft, or your own provider). This enables one-click signin.
 
@@ -36,7 +36,7 @@ This is 100% alpha software! PRs are welcome to improve the code.
 
 ~~There is NO admin configuration! You must use the API to configure the program!~~ Added by [strazto](https://github.com/strazto) in PR [#18](https://github.com/9p4/jellyfin-plugin-sso/pull/18) and [#27](https://github.com/9p4/jellyfin-plugin-sso/pull/27).
 
-**[This is for Jellyfin >=10.8](https://github.com/9p4/jellyfin-plugin-sso/issues/3) and only on the Web UI or clients supporting [Quick Connect](https://jellyfin.org/docs/general/server/quick-connect)**
+**[This is for Jellyfin >=10.8](https://github.com/9p4/jellyfin-plugin-sso/issues/3).** As of 5.0.0.0 the SSO login flow works in the web UI **and** in the native Jellyfin mobile apps (Android, and the Expo-based iOS app). Clients where the in-app browser flow is unavailable (e.g. some TVs, Swiftfin) can still log in via [Quick Connect](https://jellyfin.org/docs/general/server/quick-connect).
 
 **This README reflects the branch it is currently on! Switch tags to view version-specific documentation!**
 
@@ -63,9 +63,11 @@ This is my first time writing C# so please take all of the code written here wit
 
 ## Installing
 
-Add the package repo [https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/manifest-release/manifest.json](https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/manifest-release/manifest.json) to your Jellyfin plugin repositories.
+Add this fork's package repo [https://raw.githubusercontent.com/AlexBocken/jellyfin-plugin-sso/manifest-release/manifest.json](https://raw.githubusercontent.com/AlexBocken/jellyfin-plugin-sso/manifest-release/manifest.json) to your Jellyfin plugin repositories.
 
 Then, install the plugin from the plugin catalog!
+
+> The original `9p4/jellyfin-plugin-sso` manifest is archived and no longer updated. Use the `AlexBocken` manifest above to receive current releases. If you previously added the old `9p4` repository, replace it with this one.
 
 See [Contributing](#contributing) for instructions on how to build from source.
 
@@ -80,7 +82,7 @@ Instead add the **old** package repository: [https://repo.ersei.net/jellyfin/man
 
 If you're impatient/brave/feel like helping us test things out, you can install the nightly build of the plugin, which is automatically built against the main branch.
 
-The nightly build can be installed from the [main plugin repo](https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/manifest-release/manifest.json), and will always have a version number of `0.0.0.9000`.
+The nightly build can be installed from the [main plugin repo](https://raw.githubusercontent.com/AlexBocken/jellyfin-plugin-sso/manifest-release/manifest.json), and will always have a version number of `0.0.0.9000`.
 
 The nightly build may have new features unavailable in other builds, but **be warned**, things may change frequently in nightly builds, and things may break, and you could lose data.
 
@@ -266,7 +268,7 @@ There is also no logout callback. Logging out of Jellyfin will log you out of Je
 
 ~~This only supports Jellyfin on its own domain (for now). This is because I'm using string concatenation for generating some URLs. A PR is welcome to patch this.~~ Fixed in [PR #1](https://github.com/9p4/jellyfin-plugin-sso/pull/1).
 
-**This only works on the web UI**. ~~The user must open the Jellyfin web UI BEFORE using the SSO program to populate some values in the localStorage.~~ Fixed by implementing a comment by [Pfuenzle](https://github.com/Pfuenzle) in [Issue #5](https://github.com/9p4/jellyfin-plugin-sso/issues/5#issuecomment-1041864820).
+~~**This only works on the web UI**.~~ As of 5.0.0.0 the flow also completes inside the native Jellyfin mobile apps (Android, and the Expo-based iOS app): instead of waiting for an iframed web client to seed `localStorage`, the plugin now builds the credentials directly from the auth response and applies them in the top frame, which the native apps pick up on their next `Sessions/Capabilities/Full` request. ~~The user must open the Jellyfin web UI BEFORE using the SSO program to populate some values in the localStorage.~~ Fixed by implementing a comment by [Pfuenzle](https://github.com/Pfuenzle) in [Issue #5](https://github.com/9p4/jellyfin-plugin-sso/issues/5#issuecomment-1041864820).
 
 # Contributing
 
@@ -304,7 +306,7 @@ Anything tagged/released as a formal Github release will also be built and publi
 
 If you wish to use releases from your own fork, refer to
 [Installing](#installing), however, you will need to change the url to the
-manifest file, `https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/manifest-release/manifest.json`
+manifest file, `https://raw.githubusercontent.com/AlexBocken/jellyfin-plugin-sso/manifest-release/manifest.json`
 so that it refers to your fork.
 
 ## Credits and Thanks
