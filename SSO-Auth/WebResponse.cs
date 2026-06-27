@@ -14,15 +14,171 @@ public static class WebResponse
 <html><head>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
 <style>
+  :root {
+    --sso-bg: #101010;
+    --sso-fg: #d1cfce;
+    --sso-accent: #00a4dc;
+    --sso-error: #ff5252;
+    --sso-spinner-size: 1.75rem;
+  }
+
+  html, body { height: 100%; }
+
   body {
-    background: #101010;
-    color: #d1cfce;
-    font-family: Noto Sans, Noto Sans HK, Noto Sans JP, Noto Sans KR, Noto Sans SC, Noto Sans TC, sans-serif;
+    margin: 0;
+    background: var(--sso-bg);
+    color: var(--sso-fg);
+    font-family: 'Noto Sans', 'Noto Sans HK', 'Noto Sans JP', 'Noto Sans KR', 'Noto Sans SC', 'Noto Sans TC', sans-serif;
+  }
+
+  .sso-status {
+    box-sizing: border-box;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    padding: 2rem 1.5rem;
+    text-align: center;
+  }
+
+  .sso-status__text {
+    margin: 0;
+    max-width: 28rem;
+    font-size: 1.0625rem;
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: 0.01em;
+    color: var(--sso-fg);
+  }
+
+  .sso-status.is-error .sso-status__text {
+    color: var(--sso-error);
+    font-weight: 500;
+  }
+
+  .sso-status.is-error .sso-spinner { display: none; }
+
+  .sso-spinner { font-size: var(--sso-spinner-size); line-height: 0; }
+
+  /* Spinner adapted from jellyfin-web (src/components/loading/loading.scss).
+     Animations are baked in (no JS toggle) and the accent is exposed via
+     --sso-accent so custom CSS can recolor it. */
+  .mdl-spinner {
+    display: inline-block;
+    position: relative;
+    width: 1.95em;
+    height: 1.95em;
+    animation: mdl-spinner__container-rotate 1568.23529412ms linear infinite;
+  }
+
+  @keyframes mdl-spinner__container-rotate { to { transform: rotate(360deg); } }
+
+  .mdl-spinner__layer {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    border-color: var(--sso-accent);
+  }
+
+  .mdl-spinner__layer-1 { animation: mdl-spinner__fill-unfill-rotate 5332ms cubic-bezier(0.4, 0, 0.2, 1) infinite both, mdl-spinner__layer-1-fade-in-out 5332ms cubic-bezier(0.4, 0, 0.2, 1) infinite both; }
+  .mdl-spinner__layer-2 { animation: mdl-spinner__fill-unfill-rotate 5332ms cubic-bezier(0.4, 0, 0.2, 1) infinite both, mdl-spinner__layer-2-fade-in-out 5332ms cubic-bezier(0.4, 0, 0.2, 1) infinite both; }
+  .mdl-spinner__layer-3 { animation: mdl-spinner__fill-unfill-rotate 5332ms cubic-bezier(0.4, 0, 0.2, 1) infinite both, mdl-spinner__layer-3-fade-in-out 5332ms cubic-bezier(0.4, 0, 0.2, 1) infinite both; }
+  .mdl-spinner__layer-4 { animation: mdl-spinner__fill-unfill-rotate 5332ms cubic-bezier(0.4, 0, 0.2, 1) infinite both, mdl-spinner__layer-4-fade-in-out 5332ms cubic-bezier(0.4, 0, 0.2, 1) infinite both; }
+
+  @keyframes mdl-spinner__fill-unfill-rotate {
+    12.5% { transform: rotate(135deg); }
+    25%   { transform: rotate(270deg); }
+    37.5% { transform: rotate(405deg); }
+    50%   { transform: rotate(540deg); }
+    62.5% { transform: rotate(675deg); }
+    75%   { transform: rotate(810deg); }
+    87.5% { transform: rotate(945deg); }
+    to    { transform: rotate(1080deg); }
+  }
+
+  @keyframes mdl-spinner__layer-1-fade-in-out {
+    from { opacity: 0.99; } 25% { opacity: 0.99; } 26% { opacity: 0; }
+    89% { opacity: 0; } 90% { opacity: 0.99; } 100% { opacity: 0.99; }
+  }
+  @keyframes mdl-spinner__layer-2-fade-in-out {
+    from { opacity: 0; } 15% { opacity: 0; } 25% { opacity: 0.99; }
+    50% { opacity: 0.99; } 51% { opacity: 0; }
+  }
+  @keyframes mdl-spinner__layer-3-fade-in-out {
+    from { opacity: 0; } 40% { opacity: 0; } 50% { opacity: 0.99; }
+    75% { opacity: 0.99; } 76% { opacity: 0; }
+  }
+  @keyframes mdl-spinner__layer-4-fade-in-out {
+    from { opacity: 0; } 65% { opacity: 0; } 75% { opacity: 0.99; }
+    90% { opacity: 0.99; } 100% { opacity: 0; }
+  }
+
+  .mdl-spinner__circle {
+    box-sizing: border-box;
+    height: 100%;
+    border-width: 0.21em;
+    border-style: solid;
+    border-color: inherit;
+    border-bottom-color: transparent !important;
+    border-radius: 50%;
+    position: absolute;
+    top: 0; right: 0; bottom: 0; left: 0;
+  }
+
+  .mdl-spinner__circle-clipper {
+    display: inline-block;
+    position: relative;
+    width: 50%;
+    height: 100%;
+    overflow: hidden;
+    border-color: inherit;
+  }
+
+  .mdl-spinner__circle-clipper .mdl-spinner__circle { width: 200%; }
+
+  .mdl-spinner__circleLeft {
+    border-right-color: transparent !important;
+    transform: rotate(129deg);
+    animation: mdl-spinner__left-spin 1333ms cubic-bezier(0.4, 0, 0.2, 1) infinite both;
+  }
+
+  .mdl-spinner__circleRight {
+    left: -100%;
+    border-left-color: transparent !important;
+    transform: rotate(-129deg);
+    animation: mdl-spinner__right-spin 1333ms cubic-bezier(0.4, 0, 0.2, 1) infinite both;
+  }
+
+  @keyframes mdl-spinner__left-spin {
+    from { transform: rotate(130deg); } 50% { transform: rotate(-5deg); } to { transform: rotate(130deg); }
+  }
+  @keyframes mdl-spinner__right-spin {
+    from { transform: rotate(-130deg); } 50% { transform: rotate(5deg); } to { transform: rotate(-130deg); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mdl-spinner { animation-duration: 3000ms; }
+    .mdl-spinner__layer, .mdl-spinner__circleLeft, .mdl-spinner__circleRight { animation: none; }
+    .mdl-spinner__layer-1 { opacity: 0.99; }
   }
 </style>
 </head><body>
-<p>Logging in...</p>
-<noscript>Please enable Javascript to complete the login</noscript>
+<main class='sso-status' role='status' aria-live='polite'>
+  <div class='sso-spinner' aria-hidden='true'>
+    <div class='mdl-spinner'>
+      <div class='mdl-spinner__layer mdl-spinner__layer-1'><div class='mdl-spinner__circle-clipper mdl-spinner__left'><div class='mdl-spinner__circle mdl-spinner__circleLeft'></div></div><div class='mdl-spinner__circle-clipper mdl-spinner__right'><div class='mdl-spinner__circle mdl-spinner__circleRight'></div></div></div>
+      <div class='mdl-spinner__layer mdl-spinner__layer-2'><div class='mdl-spinner__circle-clipper mdl-spinner__left'><div class='mdl-spinner__circle mdl-spinner__circleLeft'></div></div><div class='mdl-spinner__circle-clipper mdl-spinner__right'><div class='mdl-spinner__circle mdl-spinner__circleRight'></div></div></div>
+      <div class='mdl-spinner__layer mdl-spinner__layer-3'><div class='mdl-spinner__circle-clipper mdl-spinner__left'><div class='mdl-spinner__circle mdl-spinner__circleLeft'></div></div><div class='mdl-spinner__circle-clipper mdl-spinner__right'><div class='mdl-spinner__circle mdl-spinner__circleRight'></div></div></div>
+      <div class='mdl-spinner__layer mdl-spinner__layer-4'><div class='mdl-spinner__circle-clipper mdl-spinner__left'><div class='mdl-spinner__circle mdl-spinner__circleLeft'></div></div><div class='mdl-spinner__circle-clipper mdl-spinner__right'><div class='mdl-spinner__circle mdl-spinner__circleRight'></div></div></div>
+    </div>
+  </div>
+  <p class='sso-status__text'>Signing you in&hellip;</p>
+  <noscript>Enable JavaScript to finish signing in.</noscript>
+</main>
 <script>
 
 function isTv() {
@@ -470,9 +626,13 @@ function generateDeviceId() {
 }
 
 function showError(message) {
-    var status = document.querySelector('p');
-    if (status != null) {
-        status.textContent = 'Login failed: ' + message;
+    var container = document.querySelector('.sso-status');
+    var text = document.querySelector('.sso-status__text');
+    if (container != null) {
+        container.classList.add('is-error');
+    }
+    if (text != null) {
+        text.textContent = 'Sign-in failed: ' + message;
     }
     console.error('SSO login failed:', message);
 }
