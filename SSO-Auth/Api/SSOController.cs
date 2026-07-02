@@ -417,6 +417,7 @@ public class SSOController : ControllerBase
             {
                 return ReturnError(StatusCodes.Status400BadRequest, $"Error preparing login: {state.Error} - {state.ErrorDescription}");
             }
+
             var authInfo = await _authContext.GetAuthorizationInfo(Request).ConfigureAwait(false);
             var jellyUserId = authInfo.UserId;
             StateManager.Add(state.State, new TimedAuthorizeState(state, DateTime.Now));
@@ -983,7 +984,7 @@ public class SSOController : ControllerBase
             case "saml":
                 return SamlLink(provider, jellyfinUserId, authResponse);
             case "oid":
-                return OidLink(provider, jellyfinUserId, authResponse);
+                return OidLink(provider, authResponse);
             default:
                 throw new ArgumentException($"{mode} is not a valid choice between 'saml' and 'oid'");
         }
@@ -1118,15 +1119,11 @@ public class SSOController : ControllerBase
     /// Validate an OIDC link request and create the link if it is valid.
     /// </summary>
     /// <param name="provider">The provider to authenticate against.</param>
-    /// <param name="jellyfinUserId">
-    ///   The ID of the account to be linked to the provider.
-    ///   Must be performed by this user, or an admin.
-    /// </param>
     /// <param name="response">The data passed to the client to ensure it is the right one.</param>
     /// <returns>JSON for the client to populate information with.</returns>
     [Consumes(MediaTypeNames.Application.Json)]
     [Produces(MediaTypeNames.Application.Json)]
-    private ActionResult OidLink(string provider, Guid jellyfinUserId, AuthResponse response)
+    private ActionResult OidLink(string provider, AuthResponse response)
     {
         OidConfig config;
         try
@@ -1143,7 +1140,7 @@ public class SSOController : ControllerBase
             if (kvp.Value.State.State.Equals(response.Data) && kvp.Value.Valid)
             {
                 string providerUserId = kvp.Value.Username;
-                return CreateCanonicalLink("oid", provider, jellyfinUserId, providerUserId);
+                return CreateCanonicalLink("oid", provider, kvp.Value.LinkingUserId, providerUserId);
             }
         }
 
