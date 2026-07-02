@@ -26,6 +26,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Net.Http.Headers;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SSO_Auth.Lib;
@@ -416,11 +417,13 @@ public class SSOController : ControllerBase
             {
                 return ReturnError(StatusCodes.Status400BadRequest, $"Error preparing login: {state.Error} - {state.ErrorDescription}");
             }
-
+            var authInfo = await _authContext.GetAuthorizationInfo(Request).ConfigureAwait(false);
+            var jellyUserId = authInfo.UserId;
             StateManager.Add(state.State, new TimedAuthorizeState(state, DateTime.Now));
 
             // Track whether this is a linking request or not.
             StateManager[state.State].IsLinking = isLinking;
+            StateManager[state.State].LinkingUserId = jellyUserId;
             return Redirect(state.StartUrl);
         }
 
@@ -1378,6 +1381,7 @@ public class TimedAuthorizeState
     /// </summary>
     /// <param name="state">The AuthorizeState to time.</param>
     /// <param name="created">When this state was created.</param>
+    // so im gonna keep it a buck right now in that i really have no idea what is going on
     public TimedAuthorizeState(AuthorizeState state, DateTime created)
     {
         State = state;
@@ -1388,6 +1392,7 @@ public class TimedAuthorizeState
         EnableLiveTv = false;
         EnableLiveTvManagement = false;
         AvatarURL = null;
+        LinkingUserId = Guid.Empty;
     }
 
     /// <summary>
@@ -1440,4 +1445,9 @@ public class TimedAuthorizeState
     /// Gets or sets the user avatar url.
     /// </summary>
     public string AvatarURL { get; set; }
+
+    /// <summary>
+    /// Gets or sets the user id of the active user attempting to link.
+    /// </summary>
+    public Guid LinkingUserId { get; set; }
 }
