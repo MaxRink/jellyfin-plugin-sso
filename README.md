@@ -300,6 +300,26 @@ From the root of this repo, you may clone that to `.vscode`
 git clone https://github.com/strazto/jellyfin-plugin-sso-vscode .vscode
 ```
 
+## Testing
+
+Unit tests (xUnit + Moq, targeting `net10.0`) live in `SSO-Auth.Tests/`:
+
+```bash
+dotnet test
+```
+
+There is also an **end-to-end SSO login test** under [`test/e2e/`](test/e2e/) that
+brings up [authentik](https://goauthentik.io/) (as an OIDC provider) and
+Jellyfin 12 in Docker with the built plugin, drives a real browser login with
+Playwright, and verifies the plugin provisions a Jellyfin user:
+
+```bash
+cd test/e2e && ./run.sh
+```
+
+See [`test/e2e/README.md`](test/e2e/README.md) for details. It also runs in CI
+(`.github/workflows/e2e.yml`) on pull requests.
+
 ## Releasing
 
 This plugin uses [JPRM](https://github.com/oddstr13/jellyfin-plugin-repository-manager) to build the plugin. Refer to the documentation there to install JPRM.

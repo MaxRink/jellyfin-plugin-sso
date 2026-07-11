@@ -1,0 +1,100 @@
+name: sso-e2e
+
+# End-to-end SSO login test stack: authentik (OIDC IdP) + Jellyfin 12 with the
+# SSO plugin installed. All services share one bridge network so the OIDC issuer
+# and redirect URLs are identical for both the browser and server-to-server calls.
+#
+# The plugin must be built and extracted into ./jf-config/plugins/SSO-Auth_<ver>/
+# before starting (see run.sh). Requires the AUTHENTIK_SECRET_KEY env var.
+
+networks:
+  ssonet:
+    driver: bridge
+
+x-proxy-off: &proxy-off
+  # Some Docker daemons inject an HTTP proxy into every container, which breaks
+  # container-to-container calls (internal hostnames aren't resolvable by the
+  # proxy). All traffic in this stack is internal, so disable the proxy.
+  HTTP_PROXY: ""
+  HTTPS_PROXY: ""
+  http_proxy: ""
+  https_proxy: ""
+  NO_PROXY: "*"
+  no_proxy: "*"
+
+x-authentik-env: &authentik-env
+  AUTHENTIK_SECRET_KEY: "${AUTHENTIK_SECRET_KEY:?set AUTHENTIK_SECRET_KEY}"
+  AUTHENTIK_POSTGRESQL__HOST: postgres
+  AUTHENTIK_POSTGRESQL__USER: authentik
+  AUTHENTIK_POSTGRESQL__PASSWORD: authentik
+  AUTHENTIK_POSTGRESQL__NAME: authentik
+  AUTHENTIK_REDIS__HOST: redis
+  AUTHENTIK_BOOTSTRAP_PASSWORD: "akadmin-password"
+  AUTHENTIK_BOOTSTRAP_TOKEN: "authentik-bootstrap-token"
+  AUTHENTIK_BOOTSTRAP_EMAIL: "akadmin@example.com"
+  AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+  AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    networks: [ssonet]
+    environment:
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: authentik
+      POSTGRES_DB: authentik
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    networks: [ssonet]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2025.6.4
+    command: server
+    networks: [ssonet]
+    environment:
+      <<: *authentik-env
+    ports:
+      - "9000:9000"
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 90s
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2025.6.4
+    command: worker
+    networks: [ssonet]
+    environment:
+      <<: *authentik-env
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  jellyfin:
+    image: jellyfin/jellyfin:12.0-rc2
+    networks: [ssonet]
+    environment:
+      <<: *proxy-off
+    volumes:
+      - ./jf-config:/config
+      - ./jf-cache:/cache
+    ports:
+      - "8096:8096"
+    depends_on:
+      - authentik-server

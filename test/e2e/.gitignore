@@ -1,0 +1,5 @@
+# Generated at test time
+jf-config/
+jf-cache/
+playwright/shots/
+playwright/node_modules/

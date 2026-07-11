@@ -1,0 +1,9 @@
+{
+  "name": "jellyfin-sso-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Playwright browser driver for the Jellyfin SSO end-to-end login test",
+  "dependencies": {
+    "playwright": "1.55.0"
+  }
+}

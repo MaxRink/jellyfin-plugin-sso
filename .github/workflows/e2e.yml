@@ -1,0 +1,56 @@
+name: E2E SSO Login
+
+# End-to-end test: brings up authentik (OIDC IdP) + Jellyfin 12 with the freshly
+# built SSO plugin, then drives a real browser OIDC login with Playwright and
+# verifies the plugin provisions a Jellyfin user. See test/e2e/README.md.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Build plugin (JPRM)
+        run: |
+          pip install jprm
+          mkdir -p e2e-artifacts
+          jprm --verbosity=info plugin build . --dotnet-framework net10.0 --output ./e2e-artifacts
+          echo "PLUGIN_ZIP=$(ls "$PWD"/e2e-artifacts/*.zip | head -1)" >> "$GITHUB_ENV"
+
+      - name: Run E2E SSO login test
+        working-directory: test/e2e
+        env:
+          # Keep the stack up (the runner is ephemeral) so screenshots survive for upload.
+          KEEP_UP: "1"
+        run: ./run.sh
+
+      - name: Upload Playwright screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: test/e2e/playwright/shots/
+          if-no-files-found: ignore
+          retention-days: 7

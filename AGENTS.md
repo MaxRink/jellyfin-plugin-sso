@@ -40,6 +40,20 @@ dotnet publish SSO-Auth/SSO-Auth.csproj -c Release -o out   # gathers dependency
 `dotnet build` runs StyleCop / analyzers via `jellyfin.ruleset`; keep the build
 warning-clean. Package the release plugin with JPRM: `jprm plugin build .`.
 
+Unit tests live in `SSO-Auth.Tests/` (xUnit + Moq, `net10.0`) and run via
+`dotnet test`.
+
+## End-to-end SSO login test
+
+`test/e2e/` contains a real end-to-end test: it spins up **authentik** (OIDC IdP)
+and **Jellyfin 12** in Docker with the built plugin, drives an actual browser
+OIDC login with Playwright, and verifies the plugin provisions a Jellyfin user.
+Run it with `cd test/e2e && ./run.sh` (see `test/e2e/README.md`); it also runs in
+CI via `.github/workflows/e2e.yml`. When Jellyfin 12 GA ships, bump the pinned
+`jellyfin/jellyfin` tag in `test/e2e/docker-compose.yml`. Note: Jellyfin 12
+lazily creates a default admin named `root` with an empty password (used by the
+test to obtain an admin token).
+
 ## Permissions persistence (important)
 
 On Jellyfin 10.11+/12, `UpdateUserAsync` no longer persists modified permission rows
