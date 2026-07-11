@@ -2,27 +2,27 @@
 
 <p align="center">
 
-<img alt="Logo" src="https://raw.githubusercontent.com/AlexBocken/jellyfin-plugin-sso/main/img/logo.png"/>
+<img alt="Logo" src="https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/main/img/logo.png"/>
 <br/>
 <br/>
-<a href="https://github.com/AlexBocken/jellyfin-plugin-sso">
-<img alt="GPL 3.0 License" src="https://img.shields.io/github/license/AlexBocken/jellyfin-plugin-sso.svg"/>
+<a href="https://github.com/MaxRink/jellyfin-plugin-sso">
+<img alt="GPL 3.0 License" src="https://img.shields.io/github/license/MaxRink/jellyfin-plugin-sso.svg"/>
 </a>
-<a href="https://github.com/AlexBocken/jellyfin-plugin-sso/actions/workflows/dotnet.yml">
-<img alt="GitHub Actions Build Status" src="https://github.com/AlexBocken/jellyfin-plugin-sso/actions/workflows/dotnet.yml/badge.svg"/>
+<a href="https://github.com/MaxRink/jellyfin-plugin-sso/actions/workflows/dotnet.yml">
+<img alt="GitHub Actions Build Status" src="https://github.com/MaxRink/jellyfin-plugin-sso/actions/workflows/dotnet.yml/badge.svg"/>
 </a>
-<a href="https://github.com/AlexBocken/jellyfin-plugin-sso/releases">
-<img alt="Current Release" src="https://img.shields.io/github/release/AlexBocken/jellyfin-plugin-sso.svg"/>
+<a href="https://github.com/MaxRink/jellyfin-plugin-sso/releases">
+<img alt="Current Release" src="https://img.shields.io/github/release/MaxRink/jellyfin-plugin-sso.svg"/>
 </a>
-<a href="https://github.com/AlexBocken/jellyfin-plugin-sso/releases.atom">
+<a href="https://github.com/MaxRink/jellyfin-plugin-sso/releases.atom">
 <img alt="Release RSS Feed" src="https://img.shields.io/badge/rss-releases-ffa500?logo=rss" />
 </a>
-<a href="https://github.com/AlexBocken/jellyfin-plugin-sso/commits/main.atom">
+<a href="https://github.com/MaxRink/jellyfin-plugin-sso/commits/main.atom">
 <img alt="Main Commits RSS Feed" src="https://img.shields.io/badge/rss-commits-ffa500?logo=rss" />
 </a>
 </p>
 
-> **Note:** The original project at [9p4/jellyfin-plugin-sso](https://github.com/9p4/jellyfin-plugin-sso) has been archived by its author. This repository ([AlexBocken/jellyfin-plugin-sso](https://github.com/AlexBocken/jellyfin-plugin-sso)) is a maintained fork that continues development. Install it using **our** plugin manifest (see [Installing](#installing) below).
+> **Note:** The original project at [9p4/jellyfin-plugin-sso](https://github.com/9p4/jellyfin-plugin-sso) has been archived by its author. This repository ([MaxRink/jellyfin-plugin-sso](https://github.com/MaxRink/jellyfin-plugin-sso)) is a maintained fork that targets **Jellyfin 12** and consolidates fixes and features from the wider fork ecosystem (see [Acknowledgements](#acknowledgements)). Install it using **our** plugin manifest (see [Installing](#installing) below).
 
 This plugin allows users to sign in through an SSO provider (such as Google, Microsoft, or your own provider). This enables one-click signin.
 
@@ -36,7 +36,7 @@ This is 100% alpha software! PRs are welcome to improve the code.
 
 ~~There is NO admin configuration! You must use the API to configure the program!~~ Added by [strazto](https://github.com/strazto) in PR [#18](https://github.com/9p4/jellyfin-plugin-sso/pull/18) and [#27](https://github.com/9p4/jellyfin-plugin-sso/pull/27).
 
-**[This is for Jellyfin >=10.8](https://github.com/9p4/jellyfin-plugin-sso/issues/3).** As of 5.0.0.0 the SSO login flow works in the web UI **and** in the native Jellyfin mobile apps (Android, and the Expo-based iOS app). Clients where the in-app browser flow is unavailable (e.g. some TVs, Swiftfin) can still log in via [Quick Connect](https://jellyfin.org/docs/general/server/quick-connect).
+**[This is for Jellyfin >=12.0](https://github.com/9p4/jellyfin-plugin-sso/issues/3).** Version 6.0.0.0 targets **Jellyfin 12** (`net10.0`, plugin ABI `12.0.0.0`), built against `Jellyfin.Controller`/`Jellyfin.Model` `12.0.0-rc2`. For Jellyfin 10.11 use the 4.x/5.x releases. As of 5.0.0.0 the SSO login flow works in the web UI **and** in the native Jellyfin mobile apps (Android, and the Expo-based iOS app). Clients where the in-app browser flow is unavailable (e.g. some TVs, Swiftfin) can still log in via [Quick Connect](https://jellyfin.org/docs/general/server/quick-connect).
 
 **This README reflects the branch it is currently on! Switch tags to view version-specific documentation!**
 
@@ -63,11 +63,11 @@ This is my first time writing C# so please take all of the code written here wit
 
 ## Installing
 
-Add this fork's package repo [https://raw.githubusercontent.com/AlexBocken/jellyfin-plugin-sso/manifest-release/manifest.json](https://raw.githubusercontent.com/AlexBocken/jellyfin-plugin-sso/manifest-release/manifest.json) to your Jellyfin plugin repositories.
+Add this fork's package repo [https://raw.githubusercontent.com/MaxRink/jellyfin-plugin-sso/manifest-release/manifest.json](https://raw.githubusercontent.com/MaxRink/jellyfin-plugin-sso/manifest-release/manifest.json) to your Jellyfin plugin repositories.
 
 Then, install the plugin from the plugin catalog!
 
-> The original `9p4/jellyfin-plugin-sso` manifest is archived and no longer updated. Use the `AlexBocken` manifest above to receive current releases. If you previously added the old `9p4` repository, replace it with this one.
+> The original `9p4/jellyfin-plugin-sso` manifest is archived and no longer updated. Use the `MaxRink` manifest above to receive current releases. If you previously added the old `9p4` repository, replace it with this one.
 
 See [Contributing](#contributing) for instructions on how to build from source.
 
@@ -82,7 +82,7 @@ Instead add the **old** package repository: [https://repo.ersei.net/jellyfin/man
 
 If you're impatient/brave/feel like helping us test things out, you can install the nightly build of the plugin, which is automatically built against the main branch.
 
-The nightly build can be installed from the [main plugin repo](https://raw.githubusercontent.com/AlexBocken/jellyfin-plugin-sso/manifest-release/manifest.json), and will always have a version number of `0.0.0.9000`.
+The nightly build can be installed from the [main plugin repo](https://raw.githubusercontent.com/MaxRink/jellyfin-plugin-sso/manifest-release/manifest.json), and will always have a version number of `0.0.0.9000`.
 
 The nightly build may have new features unavailable in other builds, but **be warned**, things may change frequently in nightly builds, and things may break, and you could lose data.
 
@@ -216,6 +216,10 @@ These all require authorization. Append an API key to the end of the request: `c
   - `appName`: string. App name.
   - `appVersion`: string. App version.
   - `data`: string. The OpenID state. Used to verify a request.
+- POST `OID/DeviceAuth/PROVIDER_NAME`: Device-code / headless login endpoint ([RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)). A client that has completed the OAuth2 device authorization grant with the provider posts the resulting `id_token`; the plugin validates the JWT against the provider's JWKS and exchanges it for a Jellyfin session, applying the same role/folder/Live TV RBAC as the redirect flow. Useful for TVs and other clients without an in-app browser. Post format is JSON:
+  - `idToken`: string. The OIDC `id_token` obtained from the device authorization grant.
+  - `deviceId`, `deviceName`, `appName`, `appVersion`: string. Client identification, as above.
+- Quick Connect: append `?qc=CODE` to `OID/start/PROVIDER_NAME` to carry a Jellyfin [Quick Connect](https://jellyfin.org/docs/general/server/quick-connect) code through the login; after authentication the user is redirected to the Quick Connect confirmation page with the code prefilled.
 
 #### Configuration
 
@@ -282,7 +286,7 @@ This project uses Nix flakes to manage development dependencies. Run `nix develo
 
 ## Building
 
-This is built with .NET 6.0. Build with `dotnet publish .` for the debug release in the `SSO-Auth` directory. Copy over the `IdentityModel.OidcClient.dll`, the `IdentityModel.dll` and the `SSO-Auth.dll` files in the `/bin/Debug/net6.0/publish` directory to a new folder in your Jellyfin configuration: `config/plugins/sso`.
+This is built with .NET 10.0 (required by Jellyfin 12). Build with `dotnet publish .` for the debug release in the `SSO-Auth` directory. Copy over the `Duende.IdentityModel.OidcClient.dll`, the `Duende.IdentityModel.dll`, the `Microsoft.IdentityModel.*.dll` files and the `SSO-Auth.dll` file in the `/bin/Debug/net10.0/publish` directory to a new folder in your Jellyfin configuration: `config/plugins/sso`.
 
 ### VSCode Workflow
 
@@ -310,8 +314,19 @@ Anything tagged/released as a formal Github release will also be built and publi
 
 If you wish to use releases from your own fork, refer to
 [Installing](#installing), however, you will need to change the url to the
-manifest file, `https://raw.githubusercontent.com/AlexBocken/jellyfin-plugin-sso/manifest-release/manifest.json`
+manifest file, `https://raw.githubusercontent.com/MaxRink/jellyfin-plugin-sso/manifest-release/manifest.json`
 so that it refers to your fork.
+
+## Acknowledgements
+
+This Jellyfin 12 release consolidates work from the wider `jellyfin-plugin-sso` fork ecosystem. All upstream forks are licensed **GPL-3.0**, the same license as this project, and their authors are credited below (and in the individual commit history via `Co-authored-by` trailers where applicable):
+
+- **[AlexBocken](https://github.com/AlexBocken/jellyfin-plugin-sso)** — native mobile-app (Android / Expo iOS) SSO login support with error surfacing, the restyled sign-in handoff page, and the stale-canonical-link login fix.
+- **[Buco7854](https://github.com/Buco7854/jellyfin-plugin-sso)** — `preserveAdminPermissions` option so logins no longer silently revoke admin when role mapping doesn't match, and persisting role-mapped permissions through `UpdatePolicyAsync` (#367).
+- **[basil-squared](https://github.com/basil-squared/Authentikate)** — account-linking fix that carries the linking user id through `TimedAuthorizeState`.
+- **[dustinyschild](https://github.com/dustinyschild/jellyfin-plugin-sso)** — the OID device-code-flow authentication endpoint (`POST OID/DeviceAuth/{provider}`, RFC 8628).
+- **[primeral](https://github.com/primeral/jellyfin-plugin-ssoplus)** — carrying a Quick Connect code through the OIDC login.
+- **[athendrix / eddymoulton](https://github.com/eddymoulton/jellyfin-plugin-oidc)** — creating SSO users without default access to all library folders (#29), and the `UpdatePolicyAsync` persistence approach for Jellyfin 10.11+/12 (jellyfin/jellyfin#16298).
 
 ## Credits and Thanks
 
