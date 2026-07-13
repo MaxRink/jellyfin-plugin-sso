@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Mime;
 using System.Reflection;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -187,6 +188,8 @@ public class SSOController : ControllerBase
                     (s, claim) => s.Contains($"@{{{claim.Type}}}") ? s.Replace($"@{{{claim.Type}}}", claim.Value) : s);
             }
 
+            var roleClaimPaths = ParseRoleClaimPaths(config.RoleClaim).ToArray();
+
             foreach (var claim in result.User.Claims)
             {
                 if (claim.Type == (config.DefaultUsernameClaim?.Trim() ?? "preferred_username"))
@@ -199,62 +202,11 @@ public class SSOController : ControllerBase
                 }
 
                 // Role processing
-                // The regex matches any "." not preceded by a "\": a.b.c will be split into a, b, and c, but a.b\.c will be split into a, b.c (after processing the escaped dots)
-                // We have to first process the RoleClaim string
-                string[] segments = string.IsNullOrEmpty(config.RoleClaim) ? Array.Empty<string>() : Regex.Split(config.RoleClaim.Trim(), "(?<!\\\\)\\.");
-
-                if (segments.Any())
+                foreach (var roleClaimPath in roleClaimPaths)
                 {
-                    // Now we make sure that any escaped "."s ("\.") are replaced with "."
-                    segments = segments.Select(i => i.Replace("\\.", ".")).ToArray();
-
-                    if (claim.Type == segments[0])
+                    if (claim.Type == roleClaimPath[0])
                     {
-                        List<string> roles;
-                        // If we are not using JSON values, just use the raw info from the claim value
-                        if (segments.Length == 1)
-                        {
-                            roles = new List<string> { claim.Value };
-                        }
-                        else
-                        {
-                            // We recursively traverse through the JSON data for the roles and parse it
-                            var json = JsonConvert.DeserializeObject<IDictionary<string, object>>(claim.Value);
-                            if (json is null)
-                            {
-                                roles = new List<string>();
-                            }
-                            else
-                            {
-                                bool missingSegment = false;
-                                for (int i = 1; i < segments.Length - 1; i++)
-                                {
-                                    var segment = segments[i];
-                                    if (!json.TryGetValue(segment, out var nextToken) || nextToken is not JObject nextObject)
-                                    {
-                                        missingSegment = true;
-                                        break;
-                                    }
-
-                                    json = nextObject.ToObject<IDictionary<string, object>>();
-                                    if (json is null)
-                                    {
-                                        missingSegment = true;
-                                        break;
-                                    }
-                                }
-
-                                if (missingSegment || !json.TryGetValue(segments[^1], out var rolesToken) || rolesToken is not JArray rolesArray)
-                                {
-                                    roles = new List<string>();
-                                }
-                                else
-                                {
-                                    // The final step is to take the JSON and turn it from a dictionary into a string
-                                    roles = rolesArray.ToObject<List<string>>();
-                                }
-                            }
-                        }
+                        List<string> roles = GetRolesFromClaimPath(claim, roleClaimPath);
 
                         foreach (string role in roles)
                         {
@@ -394,6 +346,60 @@ public class SSOController : ControllerBase
 
         // If the config doesn't have an active provider matching the requeset, show an error
         return BadRequest("No matching provider found");
+    }
+
+    private static IEnumerable<string[]> ParseRoleClaimPaths(string roleClaim)
+    {
+        if (string.IsNullOrWhiteSpace(roleClaim))
+        {
+            return Enumerable.Empty<string[]>();
+        }
+
+        // Role claim paths are space-separated. Escape a literal space as "\ ".
+        // Dots inside one path still mean JSON traversal. Escape a literal dot as "\.".
+        return Regex.Split(roleClaim.Trim(), "(?<!\\\\) +")
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => Regex.Split(path.Replace("\\ ", " "), "(?<!\\\\)\\.")
+                .Select(segment => segment.Replace("\\.", "."))
+                .ToArray())
+            .Where(segments => segments.Length > 0 && !string.IsNullOrWhiteSpace(segments[0]));
+    }
+
+    private static List<string> GetRolesFromClaimPath(Claim claim, string[] segments)
+    {
+        if (segments.Length == 1)
+        {
+            return new List<string> { claim.Value };
+        }
+
+        // Traverse a JSON object claim, such as "realm_access.roles".
+        var json = JsonConvert.DeserializeObject<IDictionary<string, object>>(claim.Value);
+        if (json is null)
+        {
+            return new List<string>();
+        }
+
+        for (int i = 1; i < segments.Length - 1; i++)
+        {
+            var segment = segments[i];
+            if (!json.TryGetValue(segment, out var nextToken) || nextToken is not JObject nextObject)
+            {
+                return new List<string>();
+            }
+
+            json = nextObject.ToObject<IDictionary<string, object>>();
+            if (json is null)
+            {
+                return new List<string>();
+            }
+        }
+
+        if (!json.TryGetValue(segments[^1], out var rolesToken) || rolesToken is not JArray rolesArray)
+        {
+            return new List<string>();
+        }
+
+        return rolesArray.ToObject<List<string>>() ?? new List<string>();
     }
 
     /// <summary>

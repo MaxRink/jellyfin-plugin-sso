@@ -287,7 +287,8 @@
                     <br />
                     If a user has any of these roles, then the user is
                     authenticated. This validates the OpenID response against
-                    the claim set in <strong>"RoleClaim"</strong>.
+                    the claim paths configured in
+                    <strong>"Role Claims"</strong>.
                     <br />
                     Leave blank to disable role checking.
                   </div>
@@ -375,7 +376,7 @@
                   </button>
                   <div id="FolderRoleMapping" class="sso-role-map"></div>
                   <div class="fieldDescription">
-                    Map roles (given by <strong>"Role Claim"</strong>) to lists
+                    Map roles (given by <strong>"Role Claims"</strong>) to lists
                     of libraries. If a user has a given role, they will have
                     access to the corresponding libraries. If
                     <strong>"Enable Role-Based Folder Access"</strong> is
@@ -488,7 +489,7 @@
 
                 <div class="inputContainer">
                   <label class="inputLabel inputLabelUnfocused" for="RoleClaim"
-                    >Role Claim:</label
+                    >Role Claims:</label
                   >
                   <input
                     is="emby-input"
@@ -498,18 +499,20 @@
                     class="sso-text"
                   />
                   <div class="fieldDescription">
-                    This is the value in the OpenID response to check for roles.
-                    The first element is the claim type, the subsequent values
-                    are to parse the JSON of the claim value. Use a
-                    <code>"\."</code> to denote a literal ".". This expects a
-                    list of strings from the OIDC server.
+                    One or more OpenID claim paths to check for roles,
+                    separated by spaces. The first element of each path is the
+                    claim type; later elements parse JSON fields inside the
+                    claim value. Use <code>"\."</code> for a literal dot and
+                    <code>"\ "</code> for a literal space. Each path must return
+                    a string value or a list of strings from the OIDC server.
                     <br />
-                    For Keycloak, it is <code>realm_access.roles</code> by
+                    For Keycloak, use <code>realm_access.roles</code> by
                     default for realm roles. For client roles, it is
                     <code>resource_access.&gt;clientId&lt;.roles</code>
                     (e.g. resource_access.jellyfin.roles)
                     <br />
-                    For Authelia, it is <code>groups</code>
+                    For Authelia, use <code>groups</code>. To read email and
+                    groups, use <code>email groups</code>.
                   </div>
                 </div>
 
@@ -537,7 +540,7 @@
                       class="button-link"
                       >authelia</a
                     >), additional scopes may be required in order to validate
-                    group membership in role claim.
+                    group membership in role claims.
                     <br />
                     Leave blank to only request the default scopes.
                   </div>

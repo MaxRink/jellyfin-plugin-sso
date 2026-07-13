@@ -263,7 +263,7 @@ public class OidConfig
     public List<FolderRoleMap> FolderRoleMapping { get; set; }
 
     /// <summary>
-    /// Gets or sets the claim to check roles against. Separated by "."s.
+    /// Gets or sets the claim paths to check roles against. Separated by spaces.
     /// </summary>
     public string RoleClaim { get; set; }
 
