@@ -169,13 +169,13 @@ public class SSOController : ControllerBase
                 return ReturnError(StatusCodes.Status400BadRequest, $"Error logging in: {result.Error} - {result.ErrorDescription}");
             }
 
-            if (!config.EnableFolderRoles && config.EnabledFolders != null)
+            if (config.EnabledFolders != null)
             {
-                timedState.Folders = new List<string>(config.EnabledFolders);
+                timedState.Folders = new HashSet<string>(config.EnabledFolders);
             }
             else
             {
-                timedState.Folders = new List<string>();
+                timedState.Folders = new HashSet<string>();
             }
 
             timedState.EnableLiveTv = config.EnableLiveTv;
@@ -241,7 +241,7 @@ public class SSOController : ControllerBase
                                 {
                                     if (role.Equals(folderRoleMap.Role?.Trim()))
                                     {
-                                        timedState.Folders.AddRange(folderRoleMap.Folders);
+                                        timedState.Folders.UnionWith(folderRoleMap.Folders);
                                     }
                                 }
                             }
@@ -1104,14 +1104,14 @@ public class SSOController : ControllerBase
                 return Problem("Invalid SAML signature");
             }
 
-            List<string> folders;
-            if (!config.EnableFolderRoles && config.EnabledFolders != null)
+            HashSet<string> folders;
+            if (config.EnabledFolders != null)
             {
-                folders = new List<string>(config.EnabledFolders);
+                folders = new HashSet<string>(config.EnabledFolders);
             }
             else
             {
-                folders = new List<string>();
+                folders = new HashSet<string>();
             }
 
             foreach (string role in samlResponse.GetCustomAttributes("Role"))
@@ -1135,7 +1135,7 @@ public class SSOController : ControllerBase
                         {
                             if (folderRoleMap.Role.Equals(role))
                             {
-                                folders.AddRange(folderRoleMap.Folders);
+                                folders.UnionWith(folderRoleMap.Folders);
                             }
                         }
                     }
@@ -1887,7 +1887,7 @@ public class TimedAuthorizeState
     /// <summary>
     /// Gets or sets the folders the user is allowed access to.
     /// </summary>
-    public List<string> Folders { get; set; }
+    public HashSet<string> Folders { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether the user is allowed to view live TV.
