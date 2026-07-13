@@ -675,10 +675,15 @@
                       type="checkbox"
                       class="sso-toggle"
                     />
-                    <span>Do Not Load Profile Information</span>
+                    <span>Skip OIDC UserInfo Request</span>
                   </label>
                   <div class="fieldDescription checkboxFieldDescription">
-                    May be required for Cloudflare OpenID
+                    Use only claims from the ID token and do not request
+                    additional claims from the provider's UserInfo endpoint.
+                    Enable this for Cloudflare Access, or if the provider does
+                    not expose a UserInfo endpoint or the UserInfo request
+                    fails. Claims available only from UserInfo cannot be used
+                    for usernames, roles, or avatars.
                   </div>
                 </div>
 

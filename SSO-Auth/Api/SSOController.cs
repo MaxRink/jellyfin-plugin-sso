@@ -150,7 +150,18 @@ public class SSOController : ControllerBase
             options.Policy.Discovery.ValidateIssuerName = !config.DoNotValidateIssuerName;
             var oidcClient = new OidcClient(options);
             var currentState = timedState.State;
-            var result = await oidcClient.ProcessResponseAsync(Request.QueryString.Value, currentState).ConfigureAwait(false);
+            LoginResult result;
+            try
+            {
+                result = await oidcClient.ProcessResponseAsync(Request.QueryString.Value, currentState).ConfigureAwait(false);
+            }
+            catch (ArgumentNullException ex) when (!config.DoNotLoadProfile && string.Equals(ex.ParamName, "source", StringComparison.Ordinal))
+            {
+                _logger.LogError(ex, "Failed to parse the OIDC UserInfo response for provider {Provider}", provider);
+                return ReturnError(
+                    StatusCodes.Status400BadRequest,
+                    "The OIDC UserInfo response could not be parsed. Cloudflare Access users must enable 'Skip OIDC UserInfo Request' in this provider's settings.");
+            }
 
             if (result.IsError)
             {
