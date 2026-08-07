@@ -409,11 +409,23 @@ public class SSOController : ControllerBase
 
         if (config.Enabled)
         {
+            // Which callback alias this provider answers on is inferred from the alias the
+            // login was started through, and remembered for the linking flow, which always
+            // starts at the short "/p/" path and so cannot infer it for itself.
             bool newPath = config.NewPath;
             if (!isLinking)
             {
                 newPath = Request.Path.Value.Contains("/start/", StringComparison.InvariantCultureIgnoreCase);
-                config.NewPath = newPath;
+
+                // Written through rather than only assigned: this used to mutate the
+                // in-memory config object alone, so the choice was lost on restart and
+                // linking fell back to "/r/" until someone logged in again. Guarded on a
+                // change because this path runs on every single login.
+                if (config.NewPath != newPath)
+                {
+                    config.NewPath = newPath;
+                    SSOPlugin.Instance.UpdateConfiguration(SSOPlugin.Instance.Configuration);
+                }
             }
 
             string redirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/OID/{(newPath ? "redirect" : "r")}/" + provider;
