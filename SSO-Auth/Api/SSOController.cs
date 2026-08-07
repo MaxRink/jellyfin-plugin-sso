@@ -322,7 +322,7 @@ public class SSOController : ControllerBase
                     if (claim.Type == "sub")
                     {
                         timedState.Username = claim.Value;
-                        if (config.Roles.Length == 0)
+                        if (config.Roles == null || config.Roles.Length == 0)
                         {
                             timedState.Valid = true;
                         }
