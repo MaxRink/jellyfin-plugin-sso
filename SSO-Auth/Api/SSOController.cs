@@ -1423,13 +1423,16 @@ public class SSOController : ControllerBase
         }
 
         var mappings = new SerializableDictionary<string, IEnumerable<string>>();
-        var providerList = SSOPlugin.Instance.Configuration.OidConfigs;
 
-        foreach (var providerName in providerList.Keys)
+        foreach (var provider in SSOPlugin.Instance.Configuration.OidConfigs)
         {
-            var canonLinks = providerList[providerName].CanonicalLinks;
-            var canonKeys = from link in canonLinks where link.Value == jellyfinUserId select link.Key;
-            mappings[providerName] = canonKeys;
+            // Materialised rather than left lazy: a deferred query is only evaluated while
+            // the response is serialised, by which point the configuration it reads may
+            // have been replaced by a concurrent update.
+            mappings[provider.Key] = provider.Value.CanonicalLinks
+                .Where(link => link.Value == jellyfinUserId)
+                .Select(link => link.Key)
+                .ToList();
         }
 
         return mappings;
