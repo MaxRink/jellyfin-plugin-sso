@@ -122,7 +122,7 @@ public class SSOController : ControllerBase
                 return BadRequest("Invalid or expired state");
             }
 
-            var scopes = config.OidScopes == null ? new string[2] : config.OidScopes;
+            var scopes = config.OidScopes ?? Array.Empty<string>();
             var options = new OidcClientOptions
             {
                 Authority = config.OidEndpoint?.Trim(),
@@ -424,7 +424,7 @@ public class SSOController : ControllerBase
                 ClientId = config.OidClientId?.Trim(),
                 ClientSecret = config.OidSecret?.Trim(),
                 RedirectUri = redirectUri,
-                Scope = string.Join(" ", config.OidScopes.Prepend("openid profile")),
+                Scope = string.Join(" ", (config.OidScopes ?? Array.Empty<string>()).Prepend("openid profile")),
                 DisablePushedAuthorization = config.DisablePushedAuthorization,
                 LoggerFactory = _loggerFactory,
                 LoadProfile = !config.DoNotLoadProfile,
