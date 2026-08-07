@@ -1,3 +1,18 @@
+// Canonical names come from the identity provider and provider names from the
+// plugin config, so neither is safe to drop into markup unescaped.
+const escapeHtml = (value) =>
+  String(value).replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[character],
+  );
+
 const ssoConfigLinking = {
   pluginUniqueId: "505ce9d1-d916-42fa-86ca-673ef241d7df",
   loadProviders: (view) => {
@@ -30,6 +45,10 @@ const ssoConfigLinking = {
     });
   },
   loadProviderList: (container, providers, provider_mode) => {
+    // Keyed lookup instead of building a CSS selector out of the provider name,
+    // which breaks on any name containing a quote.
+    const link_containers = new Map();
+
     providers.forEach((provider_name) => {
       var provider_config = document.createElement("div");
       provider_config.classList.add("sso-provider-links-container");
@@ -38,7 +57,7 @@ const ssoConfigLinking = {
       provider_config.innerHTML = `
       <label
         class="inputLabel inputLabelUnfocused sso-provider-link-title"
-      >${provider_name}
+      >${escapeHtml(provider_name)}
       </label>
       <a
         class="fab emby-button sso-provider-add-link"
@@ -47,11 +66,15 @@ const ssoConfigLinking = {
       </a>
       <div
         class="sso-provider-existing-links-container"
-        data-provider="${provider_name}"
       ></div>
       `;
       var add_provider = provider_config.querySelector(
         ".sso-provider-add-link",
+      );
+
+      link_containers.set(
+        provider_name,
+        provider_config.querySelector(".sso-provider-existing-links-container"),
       );
 
       //const provider_name_css = ssoConfigLinking.safeCSSId(provider_name);
@@ -60,7 +83,7 @@ const ssoConfigLinking = {
       add_provider.classList.add("sso-provider");
 
       add_provider.href = ApiClient.getUrl(
-        `/SSO/${provider_mode}/p/${provider_name}?isLinking=true`,
+        `/SSO/${provider_mode}/p/${encodeURIComponent(provider_name)}?isLinking=true`,
       );
 
       container.appendChild(provider_config);
@@ -80,9 +103,14 @@ const ssoConfigLinking = {
           console.log({ provider_map, currentUserId });
 
           Object.keys(provider_map).forEach((provider_name) => {
-            const provider_container = container.querySelector(
-              `.sso-provider-existing-links-container[data-provider="${provider_name}"]`,
-            );
+            const provider_container = link_containers.get(provider_name);
+
+            // The links endpoint reports every configured provider; skip any that
+            // was not rendered rather than throwing on a missing container.
+            if (!provider_container) {
+              return;
+            }
+
             ssoConfigLinking.populateExistingLinks(
               provider_container,
               provider_mode,
@@ -113,12 +141,12 @@ const ssoConfigLinking = {
         <input
           is="emby-checkbox"
           class="sso-link-checkbox"
-          data-id="${canonical_name}"
-          data-mode="${provider_mode}"
-          data-provider="${provider_name}"
+          data-id="${escapeHtml(canonical_name)}"
+          data-mode="${escapeHtml(provider_mode)}"
+          data-provider="${escapeHtml(provider_name)}"
           type="checkbox"
         />
-        <span class="checkbox-label">${canonical_name}</span>
+        <span class="checkbox-label">${escapeHtml(canonical_name)}</span>
       `;
       return out;
     });
@@ -158,7 +186,7 @@ const ssoConfigLinking = {
         return ApiClient.fetch({
           type: "DELETE",
           url: ApiClient.getUrl(
-            `sso/${provider_mode}/link/${provider_name}/${currentUserId}/${canonical_name}`,
+            `sso/${provider_mode}/link/${encodeURIComponent(provider_name)}/${currentUserId}/${encodeURIComponent(canonical_name)}`,
           ),
         });
       });
