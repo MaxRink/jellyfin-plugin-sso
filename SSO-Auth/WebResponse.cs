@@ -606,6 +606,25 @@ function showError(message) {
     console.error('SSO login failed:', message);
 }
 
+async function getServerVersion() {
+    // The bundled web client ships with the server, so the server's version is the
+    // one the resulting session should report. Falls back to the value this page
+    // used to hardcode if the lookup fails for any reason.
+    try {
+        const resp = await fetch('" + punycodeBaseUrl + @"/System/Info/Public');
+        if (resp.ok) {
+            const info = await resp.json();
+            if (info && info.Version) {
+                return info.Version;
+            }
+        }
+    } catch (e) {
+        console.warn('Could not resolve the server version', e);
+    }
+
+    return '10.8.0';
+}
+
 async function main() {
     try {
         var data = '" + data + @"';
@@ -624,8 +643,11 @@ async function main() {
             localStorage.setItem(""_deviceId2"", deviceId);
         }
 
+        // Kept as ""Jellyfin Web"": the token minted here is handed straight to the real
+        // web client below, so the session has to be recorded under the app that ends up
+        // using it. Only the version is resolved, instead of being frozen at 10.8.0.
         var appName = ""Jellyfin Web"";
-        var appVersion = ""10.8.0"";
+        var appVersion = await getServerVersion();
         var deviceName = getDeviceName();
 
         var request = {deviceId, appName, appVersion, deviceName, data};
