@@ -1170,6 +1170,12 @@ public class SSOController : ControllerBase
     public async Task<ActionResult> Unregister(string username, [FromBody] string provider)
     {
         User user = _userManager.GetUserByName(username);
+
+        if (user == null)
+        {
+            return NotFound("No matching user found");
+        }
+
         user.AuthenticationProviderId = provider;
         await _userManager.UpdateUserAsync(user).ConfigureAwait(false);
 
