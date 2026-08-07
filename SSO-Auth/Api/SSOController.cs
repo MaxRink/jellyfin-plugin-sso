@@ -1639,7 +1639,7 @@ public class SSOController : ControllerBase
                 string version = fvi.FileVersion;
                 client.DefaultRequestHeaders.UserAgent.ParseAdd($"Jellyfin-Plugin-SSO-Auth +{version} (https://github.com/9p4/jellyfin-plugin-sso)");
 
-                var avatarResponse = await client.GetAsync(avatarUrl);
+                using var avatarResponse = await client.GetAsync(avatarUrl).ConfigureAwait(false);
 
                 if (!avatarResponse.Content.Headers.TryGetValues("content-type", out var contentTypeList))
                 {
@@ -1647,13 +1647,13 @@ public class SSOController : ControllerBase
                 }
 
                 var contentType = contentTypeList.First();
-                if (!contentType.StartsWith("image"))
+                if (!contentType.StartsWith("image", StringComparison.OrdinalIgnoreCase))
                 {
                     throw new Exception("Content type of avatar URL is not an image, got :  " + contentType);
                 }
 
                 var extension = contentType.Split("/").Last();
-                var stream = await avatarResponse.Content.ReadAsStreamAsync();
+                using var stream = await avatarResponse.Content.ReadAsStreamAsync().ConfigureAwait(false);
 
                 if (user != null)
                 {
@@ -1675,7 +1675,7 @@ public class SSOController : ControllerBase
             }
             catch (Exception e)
             {
-                _logger.LogError(e.Message);
+                _logger.LogError(e, "Failed to set the profile image from {AvatarUrl}", avatarUrl);
             }
         }
 
