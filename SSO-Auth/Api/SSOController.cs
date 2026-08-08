@@ -359,11 +359,23 @@ public class SSOController : ControllerBase
             }
             else
             {
+                // Only the claim names at warning level: the values carry the user's email,
+                // real name and group memberships, which do not belong in the server log
+                // just because someone failed a permission check. The full set is available
+                // at debug level for working out why a provider is not matching.
                 _logger.LogWarning(
-                    "OpenID user {Username} has one or more incorrect role claims: {@Claims}. Expected any one of: {@ExpectedClaims}",
+                    "OpenID user {Username} has no matching role claim. Expected any one of: {@ExpectedRoles}. Claims returned: {@ClaimTypes}",
                     timedState.Username,
-                    result.User.Claims.Select(o => new { o.Type, o.Value }),
-                    config.Roles);
+                    config.Roles,
+                    result.User.Claims.Select(claim => claim.Type).Distinct());
+
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug(
+                        "Claims returned for {Username}: {@Claims}",
+                        timedState.Username,
+                        result.User.Claims.Select(claim => new { claim.Type, claim.Value }));
+                }
 
                 return ReturnError(StatusCodes.Status401Unauthorized, "Error. Check permissions.");
             }
