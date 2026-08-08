@@ -511,7 +511,13 @@ public class SSOController : ControllerBase
     [HttpGet("OID/GetNames")]
     public ActionResult OidProviderNames()
     {
-        return Ok(SSOPlugin.Instance.Configuration.OidConfigs.Keys);
+        // Anonymous by necessity: a sign-in page has to render its provider buttons before
+        // anyone is authenticated. Disabled providers are withheld, since nothing
+        // unauthenticated can act on them.
+        return Ok(SSOPlugin.Instance.Configuration.OidConfigs
+            .Where(provider => provider.Value.Enabled)
+            .Select(provider => provider.Key)
+            .ToList());
     }
 
     /// <summary>
