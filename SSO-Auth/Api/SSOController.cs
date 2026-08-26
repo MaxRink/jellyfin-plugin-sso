@@ -32,7 +32,6 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.Net.Http.Headers;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using SSO_Auth.Lib;
 
 namespace Jellyfin.Plugin.SSO_Auth.Api;
 
