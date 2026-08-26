@@ -351,7 +351,7 @@ public class SSOController : ControllerBase
                         return BadRequest("The linking transaction is not associated with a Jellyfin user.");
                     }
 
-                    var linkResult = CreateCanonicalLink("oid", provider, timedState.LinkingUserId.Value, timedState.Username);
+                    var linkResult = CreateCanonicalLink("oid", provider, timedState.LinkingUserId.Value, timedState.Id);
                     if (linkResult is not NoContentResult)
                     {
                         StateManager.TryRemove(state, out _);
@@ -1676,7 +1676,7 @@ public class SSOController : ControllerBase
             && !IsAuthorizationStateExpired(timedState.Created)
             && string.Equals(timedState.Provider, provider, StringComparison.Ordinal))
         {
-            return CreateCanonicalLink("oid", provider, jellyfinUserId, timedState.Username);
+            return CreateCanonicalLink("oid", provider, jellyfinUserId, timedState.Id);
         }
 
         return BadRequest("Invalid or expired authorization state.");
