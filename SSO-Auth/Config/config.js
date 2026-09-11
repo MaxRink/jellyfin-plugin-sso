@@ -208,6 +208,36 @@ const ssoConfigurationPage = {
       .filter((e) => e);
     return out;
   },
+  loadSsoOnlySettings: (page) => {
+    ApiClient.getPluginConfiguration(ssoConfigurationPage.pluginUniqueId).then(
+      (config) => {
+        page.querySelector("#EnforceSsoOnly").checked =
+          config.EnforceSsoOnly === true;
+        ssoConfigurationPage.fillTextList(
+          config.SsoOnlyExemptUsernames || [],
+          page.querySelector("#SsoOnlyExemptUsernames"),
+        );
+      },
+    );
+  },
+  saveSsoOnlySettings: (page) => {
+    // The whole configuration is read back first: these two settings sit next to the provider
+    // list, so sending only them would drop every provider.
+    ApiClient.getPluginConfiguration(ssoConfigurationPage.pluginUniqueId).then(
+      (config) => {
+        config.EnforceSsoOnly = page.querySelector("#EnforceSsoOnly").checked;
+        config.SsoOnlyExemptUsernames = ssoConfigurationPage.parseTextList(
+          page.querySelector("#SsoOnlyExemptUsernames"),
+        );
+        ApiClient.updatePluginConfiguration(
+          ssoConfigurationPage.pluginUniqueId,
+          config,
+        ).then((result) => {
+          Dashboard.processPluginConfigurationUpdateResult(result);
+        });
+      },
+    );
+  },
   loadProvider: (page, provider_name) => {
     ApiClient.getPluginConfiguration(ssoConfigurationPage.pluginUniqueId).then(
       (config) => {
@@ -369,6 +399,7 @@ const ssoConfigurationPage = {
 export default function (view) {
   ssoConfigurationPage.addTextAreaStyle(view);
   ssoConfigurationPage.loadConfiguration(view);
+  ssoConfigurationPage.loadSsoOnlySettings(view);
 
   ssoConfigurationPage.listArgumentsByType(view);
 
@@ -406,6 +437,13 @@ export default function (view) {
     current_mappings.push({ Role: "", Folders: [] });
     console.log(current_mappings);
     ssoConfigurationPage.populateRoleMappings(current_mappings, container);
+  });
+
+  view.querySelector("#SaveSsoOnlySettings").addEventListener("click", (e) => {
+    ssoConfigurationPage.saveSsoOnlySettings(view);
+
+    e.preventDefault();
+    return false;
   });
 
   view.querySelector("#sso-self-service-link").href =

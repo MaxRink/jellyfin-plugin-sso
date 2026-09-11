@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Text.Json;
 
 namespace Jellyfin.Plugin.SSO_Auth;
 
@@ -569,8 +570,9 @@ const sleep = (milliseconds) => {
     /// <param name="baseUrl">The base URL of the Jellyfin installation.</param>
     /// <param name="mode">The mode of the function; SAML or OID.</param>
     /// <param name="quickConnectCode">Optional Jellyfin Quick Connect code to prefill after authentication.</param>
+    /// <param name="returnUrl">Optional Jellyfin page to open after authentication, as a server-relative path.</param>
     /// <returns>A string with the HTML to serve to the client.</returns>
-    public static string Generator(string data, string provider, string baseUrl, string mode, string quickConnectCode = null)
+    public static string Generator(string data, string provider, string baseUrl, string mode, string quickConnectCode = null, string returnUrl = null)
     {
         // Strip out the protocol (http:// or https://) and convert the domain to Punycode
         var idnMapping = new IdnMapping();
@@ -579,9 +581,26 @@ const sleep = (milliseconds) => {
         var domain = baseUrl.Substring(protocolSeparatorIndex + 2);
         var punycodeDomain = idnMapping.GetAscii(domain);
         var punycodeBaseUrl = protocol + punycodeDomain;
-        var finalRedirectPath = string.IsNullOrWhiteSpace(quickConnectCode)
-            ? "/web/index.html"
-            : "/web/index.html#!/quickconnect?code=" + Uri.EscapeDataString(quickConnectCode);
+        // A Quick Connect code wins over a requested page: the user started the login from the
+        // Quick Connect screen, so that is where the code has to be confirmed.
+        string landingFragment;
+        if (!string.IsNullOrWhiteSpace(quickConnectCode))
+        {
+            landingFragment = "#!/quickconnect?code=" + Uri.EscapeDataString(quickConnectCode);
+        }
+        else if (!string.IsNullOrWhiteSpace(returnUrl))
+        {
+            // The web client is a hash router, so the page to open rides in the fragment. The value
+            // was already checked to be server-relative by the caller.
+            landingFragment = "#" + returnUrl;
+        }
+        else
+        {
+            landingFragment = string.Empty;
+        }
+
+        // JSON-encoded because it is emitted into a JavaScript string literal below.
+        var landingUrlLiteral = JsonSerializer.Serialize(punycodeBaseUrl + "/web/index.html" + landingFragment);
 
         return Base + @"
 function generateDeviceId() {
@@ -713,7 +732,7 @@ async function main() {
         // credentials and complete native login. Browsers simply resume the session here.
         // When a Quick Connect code was carried through the login, redirect to the Quick
         // Connect page so it is prefilled and confirmed automatically.
-        window.location.replace('" + punycodeBaseUrl + finalRedirectPath + @"');
+        window.location.replace(" + landingUrlLiteral + @");
     } catch (err) {
         showError(err && err.message ? err.message : String(err));
     }

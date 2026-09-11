@@ -1,7 +1,8 @@
 name: "SSO-Auth"
 guid: "505ce9d1-d916-42fa-86ca-673ef241d7df"
-imageUrl: "https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/main/img/logo.png"
-version: "6.0.0.1"
+image: "img/logo.png"
+imageUrl: "https://raw.githubusercontent.com/MaxRink/jellyfin-plugin-sso/main/img/logo.png"
+version: "6.1.0.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 owner: "MaxRink"
@@ -19,6 +20,7 @@ artifacts:
   - "Microsoft.IdentityModel.Logging.dll"
   - "Microsoft.IdentityModel.Abstractions.dll"
 changelog: |
+  6.1.0.0: Sign-out support - /SSOViews/logout ends the Jellyfin session and then the session at the provider, using the provider's end_session_endpoint or a Logout URL you set (Authelia needs the latter). Deep links survive login - pass ?returnUrl= or ?url= to the start endpoint and the browser lands on that page. Username mappings per provider, for people whose provider name differs from their Jellyfin name; matching an existing account by name already ignored case. SSO-only login, on for every account that has an SSO link, with an exemption list so one local administrator keeps a password. New "Send Client Credentials As Basic Auth" option, needed to keep Pushed Authorization enabled against a provider set to client_secret_basic. Plugin logo now ships in the package. Fixed a configuration property that handed out a throwaway dictionary, so writes to an empty link list were lost.
   6.0.0.1: Show the SSO settings page in the dashboard sidebar (Plugins section) like other configurable plugins.
   6.0.0.0: Jellyfin 12 support (net10.0, targetAbi 12.0.0.0), built against Jellyfin.Controller/Model 12.0.0. Removed the vulnerable System.Security.Cryptography.Xml package (provided by the net10 shared framework) and the unused F# helper project. Security - account linking now starts from the authenticated self-service page (POST OID|SAML/StartLink), states are single-use, provider-bound and expire after 10 minutes, SAML responses are checked against the request they answer, and an identity already linked to another user is refused; the unauthenticated ?isLinking=true start is no longer accepted. The linking page authenticates with the Authorization header (the legacy header is ignored by Jellyfin 12). OpenID links are keyed by the sub claim with automatic migration of username-keyed links. New per-provider option disableUsernameAccountAdoption. roleClaim accepts several space-separated claim paths and JSON-object-keyed roles (Zitadel); enabledFolders is always applied; data: avatar URLs are accepted; Cloudflare Access UserInfo failures are reported clearly. Requests to the identity provider go through Jellyfin's dual-stack HTTP client with a 30 second timeout and report 502/504 with the endpoint instead of hanging for 100 seconds (#2). Pre-existing local/LDAP accounts keep their auth provider; default library access is only stripped when the plugin manages permissions. Plus many robustness fixes adopted from community forks (see README Acknowledgements).
   5.0.0.1: Restyle the sign-in handoff page to match Jellyfin: native MDL spinner with the status text centered beneath it, and errors shown in red instead of plain text. Themeable via CSS variables.

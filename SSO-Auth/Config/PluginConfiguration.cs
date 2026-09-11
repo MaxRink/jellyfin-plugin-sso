@@ -16,6 +16,7 @@ public class PluginConfiguration : MediaBrowser.Model.Plugins.BasePluginConfigur
     {
         SamlConfigs = new SerializableDictionary<string, SamlConfig>();
         OidConfigs = new SerializableDictionary<string, OidConfig>();
+        SsoOnlyExemptUsernames = Array.Empty<string>();
     }
 
     /// <summary>
@@ -29,6 +30,20 @@ public class PluginConfiguration : MediaBrowser.Model.Plugins.BasePluginConfigur
     /// </summary>
     [XmlElement("OidConfigs")]
     public SerializableDictionary<string, OidConfig> OidConfigs { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether accounts that have an SSO link may only sign in
+    /// through SSO. Such accounts are moved to an authentication provider that always rejects, so
+    /// their password stops working. Accounts without any SSO link are never touched, which keeps a
+    /// break-glass administrator able to sign in.
+    /// </summary>
+    public bool EnforceSsoOnly { get; set; }
+
+    /// <summary>
+    /// Gets or sets the usernames that keep password login even while <see cref="EnforceSsoOnly"/>
+    /// is set. Matched case-insensitively against the Jellyfin username.
+    /// </summary>
+    public string[] SsoOnlyExemptUsernames { get; set; }
 }
 
 /// <summary>
@@ -38,6 +53,7 @@ public class PluginConfiguration : MediaBrowser.Model.Plugins.BasePluginConfigur
 public class SamlConfig
 {
     private SerializableDictionary<string, Guid> _canonicalLinks;
+    private SerializableDictionary<string, string> _usernameMappings;
 
     /// <summary>
     /// Gets or sets the SAML information endpoint.
@@ -91,6 +107,25 @@ public class SamlConfig
     /// refused until the account is linked from the self-service page.
     /// </summary>
     public bool DisableUsernameAccountAdoption { get; set; }
+
+    /// <summary>
+    /// Gets or sets explicit provider-username to Jellyfin-username mappings, applied before an
+    /// account is looked up or created. Keys are matched case-insensitively (the comparer of a
+    /// deserialised dictionary is not preserved, so the lookup does the comparison itself).
+    /// </summary>
+    public SerializableDictionary<string, string> UsernameMappings
+    {
+        get => _usernameMappings ??= new SerializableDictionary<string, string>();
+        set => _usernameMappings = value;
+    }
+
+    /// <summary>
+    /// Gets or sets the URL that ends the session at the identity provider. Leave empty to use the
+    /// provider's advertised <c>end_session_endpoint</c>. Providers without one (Authelia, for
+    /// example) need their own logout URL here, such as
+    /// <c>https://auth.example.com/logout</c>.
+    /// </summary>
+    public string LogoutUrl { get; set; }
 
     /// <summary>
     /// Gets or sets what roles are checked to determine whether the user is allowed to use Jellyfin.
@@ -160,15 +195,9 @@ public class SamlConfig
     [XmlElement("CanonicalLinks")]
     public SerializableDictionary<string, Guid> CanonicalLinks
     {
-        get
-        {
-            if (_canonicalLinks == null)
-            {
-                return new SerializableDictionary<string, Guid>();
-            }
-
-            return _canonicalLinks;
-        }
+        // Assigned rather than returned: handing out a throwaway dictionary would silently drop
+        // whatever the caller writes into it.
+        get => _canonicalLinks ??= new SerializableDictionary<string, Guid>();
         set => _canonicalLinks = value;
     }
 }
@@ -180,6 +209,7 @@ public class SamlConfig
 public class OidConfig
 {
     private SerializableDictionary<string, Guid> _canonicalLinks;
+    private SerializableDictionary<string, string> _usernameMappings;
 
     /// <summary>
     /// Gets or sets the OpenID well-known information endpoint.
@@ -233,6 +263,25 @@ public class OidConfig
     /// refused until the account is linked from the self-service page.
     /// </summary>
     public bool DisableUsernameAccountAdoption { get; set; }
+
+    /// <summary>
+    /// Gets or sets explicit provider-username to Jellyfin-username mappings, applied before an
+    /// account is looked up or created. Keys are matched case-insensitively (the comparer of a
+    /// deserialised dictionary is not preserved, so the lookup does the comparison itself).
+    /// </summary>
+    public SerializableDictionary<string, string> UsernameMappings
+    {
+        get => _usernameMappings ??= new SerializableDictionary<string, string>();
+        set => _usernameMappings = value;
+    }
+
+    /// <summary>
+    /// Gets or sets the URL that ends the session at the identity provider. Leave empty to use the
+    /// provider's advertised <c>end_session_endpoint</c>. Providers without one (Authelia, for
+    /// example) need their own logout URL here, such as
+    /// <c>https://auth.example.com/logout</c>.
+    /// </summary>
+    public string LogoutUrl { get; set; }
 
     /// <summary>
     /// Gets or sets what roles are checked to determine whether the user is allowed to use Jellyfin.
@@ -312,15 +361,9 @@ public class OidConfig
     [XmlElement("CanonicalLinks")]
     public SerializableDictionary<string, Guid> CanonicalLinks
     {
-        get
-        {
-            if (_canonicalLinks == null)
-            {
-                return new SerializableDictionary<string, Guid>();
-            }
-
-            return _canonicalLinks;
-        }
+        // Assigned rather than returned: handing out a throwaway dictionary would silently drop
+        // whatever the caller writes into it.
+        get => _canonicalLinks ??= new SerializableDictionary<string, Guid>();
         set => _canonicalLinks = value;
     }
 
@@ -343,6 +386,15 @@ public class OidConfig
     /// Gets or sets a value indicating whether pushed authorization is required.
     /// </summary>
     public bool DisablePushedAuthorization { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether client credentials are sent as an HTTP Basic
+    /// authorization header instead of in the request body. Pushed Authorization Requests always
+    /// use the header, so a provider configured for Basic (Authelia's
+    /// <c>token_endpoint_auth_method: client_secret_basic</c>) needs this to keep the token
+    /// request consistent with it.
+    /// </summary>
+    public bool UseClientSecretBasic { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether the OpenID endpoints are validated.

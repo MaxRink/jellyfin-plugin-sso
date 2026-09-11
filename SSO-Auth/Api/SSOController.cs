@@ -10,10 +10,12 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Duende.IdentityModel.Client;
 using Duende.IdentityModel.OidcClient;
 using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
+using Jellyfin.Plugin.SSO_Auth.Auth;
 using Jellyfin.Plugin.SSO_Auth.Config;
 using Jellyfin.Plugin.SSO_Auth.Helpers;
 using MediaBrowser.Common.Api;
@@ -154,6 +156,9 @@ public class SSOController : ControllerBase
                 RedirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/OID/{(Request.Path.Value.Contains("/start/", StringComparison.InvariantCultureIgnoreCase) ? "redirect" : "r")}/" + provider,
                 Scope = string.Join(" ", scopes.Prepend("openid profile")),
                 DisablePushedAuthorization = config.DisablePushedAuthorization,
+                TokenClientCredentialStyle = config.UseClientSecretBasic
+                    ? ClientCredentialStyle.AuthorizationHeader
+                    : ClientCredentialStyle.PostBody,
                 LoggerFactory = _loggerFactory,
                 LoadProfile = !config.DoNotLoadProfile,
                 BackchannelTimeout = BackchannelTimeout,
@@ -368,11 +373,12 @@ public class SSOController : ControllerBase
                     }
 
                     StateManager.TryRemove(state, out _);
+                    await EnforceSsoOnlyForLinkedUser(timedState.LinkingUserId.Value).ConfigureAwait(false);
                     return Redirect(GetRequestBase(config.SchemeOverride, config.PortOverride) + "/SSOViews/linking");
                 }
 
                 _logger.LogInformation($"Is request linking: {isLinking}");
-                return Content(WebResponse.Generator(data: state, provider: provider, baseUrl: GetRequestBase(config.SchemeOverride, config.PortOverride), mode: "OID", quickConnectCode: timedState.QuickConnectCode), MediaTypeNames.Text.Html);
+                return Content(WebResponse.Generator(data: state, provider: provider, baseUrl: GetRequestBase(config.SchemeOverride, config.PortOverride), mode: "OID", quickConnectCode: timedState.QuickConnectCode, returnUrl: timedState.ReturnUrl), MediaTypeNames.Text.Html);
             }
             else
             {
@@ -487,17 +493,19 @@ public class SSOController : ControllerBase
     /// <param name="provider">The name of the provider.</param>
     /// <param name="isLinking">Whether or not this request is to link accounts (Rather than authenticate).</param>
     /// <param name="qc">Optional Jellyfin Quick Connect code to prefill after authentication.</param>
+    /// <param name="returnUrl">Optional Jellyfin page to open after authentication, as a server-relative path.</param>
+    /// <param name="url">Alias for <paramref name="returnUrl"/>, which is the name the Jellyfin web client uses.</param>
     /// <returns>An asynchronous result for the authentication.</returns>
     [HttpGet("OID/p/{provider}")]
     [HttpGet("OID/start/{provider}")]
-    public async Task<ActionResult> OidChallenge(string provider, [FromQuery] bool isLinking = false, [FromQuery] string qc = null)
+    public async Task<ActionResult> OidChallenge(string provider, [FromQuery] bool isLinking = false, [FromQuery] string qc = null, [FromQuery] string returnUrl = null, [FromQuery] string url = null)
     {
         if (isLinking)
         {
             return BadRequest("Linking must be started from the authenticated SSO linking page.");
         }
 
-        return await StartOidChallenge(provider, false, null, false, qc).ConfigureAwait(false);
+        return await StartOidChallenge(provider, false, null, false, qc, SanitizeReturnUrl(returnUrl ?? url)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -525,7 +533,7 @@ public class SSOController : ControllerBase
         return await StartOidChallenge(provider, true, jellyfinUserId, true).ConfigureAwait(false);
     }
 
-    private async Task<ActionResult> StartOidChallenge(string provider, bool isLinking, Guid? linkingUserId, bool returnStartUrl, string quickConnectCode = null)
+    private async Task<ActionResult> StartOidChallenge(string provider, bool isLinking, Guid? linkingUserId, bool returnStartUrl, string quickConnectCode = null, string returnUrl = null)
     {
         Invalidate();
         OidConfig config;
@@ -569,6 +577,9 @@ public class SSOController : ControllerBase
                 RedirectUri = redirectUri,
                 Scope = string.Join(" ", (config.OidScopes ?? Array.Empty<string>()).Prepend("openid profile")),
                 DisablePushedAuthorization = config.DisablePushedAuthorization,
+                TokenClientCredentialStyle = config.UseClientSecretBasic
+                    ? ClientCredentialStyle.AuthorizationHeader
+                    : ClientCredentialStyle.PostBody,
                 LoggerFactory = _loggerFactory,
                 LoadProfile = !config.DoNotLoadProfile,
                 BackchannelTimeout = BackchannelTimeout,
@@ -612,7 +623,8 @@ public class SSOController : ControllerBase
                 IsLinking = isLinking,
                 LinkingUserId = linkingUserId,
                 Provider = provider,
-                QuickConnectCode = quickConnectCode
+                QuickConnectCode = quickConnectCode,
+                ReturnUrl = returnUrl
             };
 
             if (!StateManager.TryAdd(state.State, timedState))
@@ -1449,6 +1461,7 @@ public class SSOController : ControllerBase
     private async Task<Guid?> CreateCanonicalLinkAndUserIfNotExist(string mode, string provider, string canonicalId, string canonicalName)
     {
         var settings = GetProvisioningSettings(mode, provider);
+        canonicalName = ResolveMappedUsername(mode, provider, canonicalName);
         User user = null;
 
         // First try to get the user by its id in case it was already registered before
@@ -1484,13 +1497,11 @@ public class SSOController : ControllerBase
         // their account on upgrade; MigrateLegacyUsernameLink rekeys it below.
         if (user == null && !string.Equals(canonicalId, canonicalName, StringComparison.Ordinal))
         {
-            try
+            var legacyLinks = GetCanonicalLinks(mode, provider);
+            var legacyKey = legacyLinks.Keys.FirstOrDefault(key => string.Equals(key, canonicalName, StringComparison.OrdinalIgnoreCase));
+            if (legacyKey is not null)
             {
-                user = _userManager.GetUserById(GetCanonicalLink(mode, provider, canonicalName));
-            }
-            catch (KeyNotFoundException)
-            {
-                user = null;
+                user = _userManager.GetUserById(legacyLinks[legacyKey]);
             }
         }
 
@@ -1672,15 +1683,19 @@ public class SSOController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, "User is not allowed to link SSO providers.");
         }
 
-        switch (mode.ToLower())
+        var result = mode.ToLower() switch
         {
-            case "saml":
-                return SamlLink(provider, jellyfinUserId, authResponse);
-            case "oid":
-                return OidLink(provider, jellyfinUserId, authResponse);
-            default:
-                throw new ArgumentException($"{mode} is not a valid choice between 'saml' and 'oid'");
+            "saml" => SamlLink(provider, jellyfinUserId, authResponse),
+            "oid" => OidLink(provider, jellyfinUserId, authResponse),
+            _ => throw new ArgumentException($"{mode} is not a valid choice between 'saml' and 'oid'"),
+        };
+
+        if (result is NoContentResult)
+        {
+            await EnforceSsoOnlyForLinkedUser(jellyfinUserId).ConfigureAwait(false);
         }
+
+        return result;
     }
 
     /// <summary>
@@ -2081,6 +2096,172 @@ public class SSOController : ControllerBase
         return client;
     }
 
+    /// <summary>
+    /// Checks a requested post-login page and returns it only if it cannot leave this server.
+    /// </summary>
+    /// <remarks>
+    /// The value arrives from the query string and ends up in a client-side navigation, so anything
+    /// that could point at another origin is dropped: absolute URLs, protocol-relative "//host",
+    /// the backslash forms browsers fold into "//", control characters, and anything overly long. A
+    /// rejected value falls back to the default landing page instead of failing the login.
+    /// </remarks>
+    /// <param name="returnUrl">The requested page.</param>
+    /// <returns>The page to open, or null to use the default.</returns>
+    private static string SanitizeReturnUrl(string returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl) || returnUrl.Length > 512)
+        {
+            return null;
+        }
+
+        if (returnUrl[0] != '/' || returnUrl.Contains('\\', StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (returnUrl.Length > 1 && returnUrl[1] == '/')
+        {
+            return null;
+        }
+
+        return returnUrl.Any(char.IsControl) ? null : returnUrl;
+    }
+
+    /// <summary>
+    /// Applies the provider's username mappings to a username from the identity provider.
+    /// </summary>
+    /// <param name="mode">The mode of the function; SAML or OID.</param>
+    /// <param name="provider">The provider the username came from.</param>
+    /// <param name="providerUsername">The username reported by the provider.</param>
+    /// <returns>The Jellyfin username to use.</returns>
+    private string ResolveMappedUsername(string mode, string provider, string providerUsername)
+    {
+        if (string.IsNullOrEmpty(providerUsername))
+        {
+            return providerUsername;
+        }
+
+        var mappings = mode switch
+        {
+            "oid" => SSOPlugin.Instance.Configuration.OidConfigs[provider].UsernameMappings,
+            "saml" => SSOPlugin.Instance.Configuration.SamlConfigs[provider].UsernameMappings,
+            _ => null,
+        };
+
+        if (mappings is null || mappings.Count == 0)
+        {
+            return providerUsername;
+        }
+
+        // Compared here rather than through the dictionary's comparer: the comparer of a
+        // deserialised SerializableDictionary is the default one, so it would be case-sensitive.
+        foreach (var mapping in mappings)
+        {
+            if (string.Equals(mapping.Key?.Trim(), providerUsername, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(mapping.Value))
+            {
+                _logger.LogInformation("Mapped {Provider} username {ProviderUsername} to Jellyfin user {JellyfinUsername}", provider, providerUsername, mapping.Value.Trim());
+                return mapping.Value.Trim();
+            }
+        }
+
+        return providerUsername;
+    }
+
+    /// <summary>
+    /// Ends the session at the identity provider and returns the browser to the Jellyfin login page.
+    /// </summary>
+    /// <remarks>
+    /// Anonymous on purpose: the browser arrives here by navigation, after the Jellyfin session has
+    /// already been dropped client-side, so it carries no token. The endpoint only redirects to a
+    /// URL taken from the provider configuration or its discovery document.
+    /// </remarks>
+    /// <param name="provider">The name of the provider to sign out of.</param>
+    /// <returns>A redirect to the provider, or to the Jellyfin login page when the provider has no
+    /// logout URL.</returns>
+    [HttpGet("OID/logout/{provider}")]
+    public async Task<ActionResult> OidLogout(string provider)
+    {
+        OidConfig config;
+        try
+        {
+            config = SSOPlugin.Instance.Configuration.OidConfigs[provider];
+        }
+        catch (KeyNotFoundException)
+        {
+            return BadRequest("No matching provider found");
+        }
+
+        var loginPage = GetRequestBase(config.SchemeOverride, config.PortOverride) + "/web/index.html#/login";
+
+        var logoutUrl = config.LogoutUrl?.Trim();
+        if (string.IsNullOrEmpty(logoutUrl))
+        {
+            logoutUrl = await GetEndSessionEndpoint(provider, config).ConfigureAwait(false);
+        }
+
+        if (string.IsNullOrEmpty(logoutUrl))
+        {
+            _logger.LogInformation("Provider {Provider} has no logout URL and does not advertise end_session_endpoint; ending the Jellyfin session only", provider);
+            return Redirect(loginPage);
+        }
+
+        // post_logout_redirect_uri only works if the provider has it registered, so a provider that
+        // rejects it would leave the user stranded on an error page. client_id is what lets a
+        // provider match the request without an id_token_hint.
+        var endSessionUrl = new RequestUrl(logoutUrl).Create(new Parameters
+        {
+            { "client_id", config.OidClientId?.Trim() },
+            { "post_logout_redirect_uri", loginPage },
+
+            // Authelia and a few others use rd for the post-logout redirect instead.
+            { "rd", loginPage },
+        });
+
+        return Redirect(endSessionUrl);
+    }
+
+    private async Task EnforceSsoOnlyForLinkedUser(Guid jellyfinUserId)
+    {
+        var user = _userManager.GetUserById(jellyfinUserId);
+        if (user is not null)
+        {
+            await SsoOnlyEnforcer.EnforceAsync(_userManager, _logger, user).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<string> GetEndSessionEndpoint(string provider, OidConfig config)
+    {
+        try
+        {
+            using var client = CreatePluginHttpClient();
+            client.Timeout = BackchannelTimeout;
+            var discovery = await client.GetDiscoveryDocumentAsync(new DiscoveryDocumentRequest
+            {
+                Address = config.OidEndpoint?.Trim(),
+                Policy = new DiscoveryPolicy
+                {
+                    ValidateEndpoints = !config.DoNotValidateEndpoints,
+                    RequireHttps = !config.DisableHttps,
+                    ValidateIssuerName = !config.DoNotValidateIssuerName,
+                },
+            }).ConfigureAwait(false);
+
+            if (discovery.IsError)
+            {
+                _logger.LogError("Could not read the discovery document of {Provider} while signing out: {Error}", provider, discovery.Error);
+                return null;
+            }
+
+            return discovery.EndSessionEndpoint;
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
+        {
+            _logger.LogError(e, "Could not reach {Provider} while signing out", provider);
+            return null;
+        }
+    }
+
     private void Invalidate()
     {
         foreach (var kvp in StateManager)
@@ -2274,6 +2455,11 @@ public class TimedAuthorizeState
     /// Gets or sets the Jellyfin Quick Connect code to prefill after authentication.
     /// </summary>
     public string QuickConnectCode { get; set; }
+
+    /// <summary>
+    /// Gets or sets the Jellyfin page to open after authentication, as a server-relative path.
+    /// </summary>
+    public string ReturnUrl { get; set; }
 
     /// <summary>
     /// Gets or sets the Jellyfin user that authenticated the start of a linking flow.
