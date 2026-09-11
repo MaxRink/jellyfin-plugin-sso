@@ -1564,14 +1564,17 @@ public class SSOController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, "Current user is not allowed to unlink SSO providers for user ID.");
         }
 
-        Guid linkedId = GetCanonicalLink(mode, provider, canonicalName);
+        var links = GetCanonicalLinks(mode, provider);
+
+        if (!links.TryGetValue(canonicalName, out var linkedId))
+        {
+            return NotFound("No link is registered for that canonical name.");
+        }
 
         if (linkedId != jellyfinUserId)
         {
             return StatusCode(StatusCodes.Status409Conflict, "jellyfin UID does not match id registered to that canonical name.");
         }
-
-        var links = GetCanonicalLinks(mode, provider);
 
         links.Remove(canonicalName);
 
