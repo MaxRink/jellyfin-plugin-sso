@@ -17,6 +17,7 @@ using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.SSO_Auth.Config;
 using Jellyfin.Plugin.SSO_Auth.Helpers;
 using MediaBrowser.Common.Api;
+using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Authentication;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Library;
@@ -54,6 +55,7 @@ public class SSOController : ControllerBase
     private readonly IServerConfigurationManager _serverConfigurationManager;
     private readonly IHttpClientFactory _httpClientFactory;
     private static readonly TimeSpan AuthorizationStateLifetime = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan BackchannelTimeout = TimeSpan.FromSeconds(30);
     private static readonly ConcurrentDictionary<string, TimedAuthorizeState> StateManager = new();
     private static readonly ConcurrentDictionary<string, TimedSamlLinkState> SamlLinkStateManager = new();
 
@@ -154,15 +156,8 @@ public class SSOController : ControllerBase
                 DisablePushedAuthorization = config.DisablePushedAuthorization,
                 LoggerFactory = _loggerFactory,
                 LoadProfile = !config.DoNotLoadProfile,
-                HttpClientFactory = o =>
-                {
-                    var client = _httpClientFactory.CreateClient();
-                    System.Reflection.Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
-                    System.Diagnostics.FileVersionInfo fvi = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
-                    string version = fvi.FileVersion;
-                    client.DefaultRequestHeaders.UserAgent.ParseAdd($"Jellyfin-Plugin-SSO-Auth +{version} (https://github.com/9p4/jellyfin-plugin-sso)");
-                    return client;
-                }
+                BackchannelTimeout = BackchannelTimeout,
+                HttpClientFactory = CreateOidcHttpClient
             };
             var oidEndpointUri = new Uri(config.OidEndpoint?.Trim());
             options.Policy.Discovery.AdditionalEndpointBaseAddresses.Add(oidEndpointUri.GetLeftPart(UriPartial.Authority));
@@ -184,6 +179,18 @@ public class SSOController : ControllerBase
                 return ReturnError(
                     StatusCodes.Status400BadRequest,
                     "The OIDC UserInfo response could not be parsed. Cloudflare Access users must enable 'Skip OIDC UserInfo Request' in this provider's settings.");
+            }
+            catch (TaskCanceledException ex)
+            {
+                StateManager.TryRemove(state, out _);
+                _logger.LogError(ex, "Completing the OpenID login for provider {Provider} timed out after {TimeoutSeconds} seconds; the token, signing-key or user-info request to {Endpoint} did not complete", provider, BackchannelTimeout.TotalSeconds, options.Authority);
+                return ReturnError(StatusCodes.Status504GatewayTimeout, "Timed out contacting the OpenID provider while completing login. Check the Jellyfin logs.");
+            }
+            catch (HttpRequestException ex)
+            {
+                StateManager.TryRemove(state, out _);
+                _logger.LogError(ex, "Completing the OpenID login for provider {Provider} failed while contacting {Endpoint}", provider, options.Authority);
+                return ReturnError(StatusCodes.Status502BadGateway, "Could not contact the OpenID provider while completing login. Check the Jellyfin logs.");
             }
 
             if (result.IsError)
@@ -564,16 +571,8 @@ public class SSOController : ControllerBase
                 DisablePushedAuthorization = config.DisablePushedAuthorization,
                 LoggerFactory = _loggerFactory,
                 LoadProfile = !config.DoNotLoadProfile,
-                HttpClientFactory = o =>
-                {
-                    var client = _httpClientFactory.CreateClient();
-                    System.Reflection.Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
-                    System.Diagnostics.FileVersionInfo fvi = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
-                    string version = fvi.FileVersion;
-
-                    client.DefaultRequestHeaders.UserAgent.ParseAdd($"Jellyfin-Plugin-SSO-Auth +{version} (https://github.com/9p4/jellyfin-plugin-sso)");
-                    return client;
-                }
+                BackchannelTimeout = BackchannelTimeout,
+                HttpClientFactory = CreateOidcHttpClient
             };
             var oidEndpointUri = new Uri(config.OidEndpoint?.Trim());
             options.Policy.Discovery.AdditionalEndpointBaseAddresses.Add(oidEndpointUri.GetLeftPart(UriPartial.Authority));
@@ -583,10 +582,28 @@ public class SSOController : ControllerBase
 
             WarnAboutRelaxedDiscovery(config);
             var oidcClient = new OidcClient(options);
-            var state = await oidcClient.PrepareLoginAsync().ConfigureAwait(false);
+            var discoveryEndpoint = options.Authority?.TrimEnd('/') + "/.well-known/openid-configuration";
+            _logger.LogInformation("Preparing OpenID login for provider {Provider} via {DiscoveryEndpoint}", provider, discoveryEndpoint);
+
+            AuthorizeState state;
+            try
+            {
+                state = await oidcClient.PrepareLoginAsync().ConfigureAwait(false);
+            }
+            catch (TaskCanceledException ex)
+            {
+                _logger.LogError(ex, "Preparing the OpenID login for provider {Provider} timed out after {TimeoutSeconds} seconds; {DiscoveryEndpoint} did not answer. Check that Jellyfin can reach the provider (DNS, IPv6 routing, proxies) from where it runs", provider, BackchannelTimeout.TotalSeconds, discoveryEndpoint);
+                return ReturnError(StatusCodes.Status504GatewayTimeout, $"Timed out contacting the OpenID provider at {discoveryEndpoint}. Check the Jellyfin logs.");
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogError(ex, "Preparing the OpenID login for provider {Provider} failed while contacting {DiscoveryEndpoint}", provider, discoveryEndpoint);
+                return ReturnError(StatusCodes.Status502BadGateway, $"Could not contact the OpenID provider at {discoveryEndpoint}. Check the Jellyfin logs.");
+            }
 
             if (state.IsError)
             {
+                _logger.LogError("Preparing the OpenID login for provider {Provider} failed: {Error} - {ErrorDescription}", provider, state.Error, state.ErrorDescription);
                 return ReturnError(StatusCodes.Status400BadRequest, $"Error preparing login: {state.Error} - {state.ErrorDescription}");
             }
 
@@ -777,7 +794,8 @@ public class SSOController : ControllerBase
 
         try
         {
-            using var httpClient = _httpClientFactory.CreateClient();
+            using var httpClient = CreatePluginHttpClient();
+            httpClient.Timeout = BackchannelTimeout;
 
             // Fetch OIDC discovery document to get issuer and JWKS URI
             var discoveryUrl = config.OidEndpoint?.Trim().TrimEnd('/') + "/.well-known/openid-configuration";
@@ -1574,12 +1592,7 @@ public class SSOController : ControllerBase
             return (new MemoryStream(Convert.FromBase64String(base64Data)), contentType);
         }
 
-        using var client = _httpClientFactory.CreateClient();
-
-        System.Reflection.Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
-        System.Diagnostics.FileVersionInfo fvi = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
-        string version = fvi.FileVersion;
-        client.DefaultRequestHeaders.UserAgent.ParseAdd($"Jellyfin-Plugin-SSO-Auth +{version} (https://github.com/9p4/jellyfin-plugin-sso)");
+        using var client = CreatePluginHttpClient();
 
         using var avatarResponse = await client.GetAsync(avatarUrl).ConfigureAwait(false);
 
@@ -2041,6 +2054,31 @@ public class SSOController : ControllerBase
         {
             _logger.LogWarning("Endpoint validation is disabled for {Endpoint}; the provider may advertise endpoints on unrelated hosts", config.OidEndpoint?.Trim());
         }
+    }
+
+    /// <summary>
+    /// Creates the HTTP client used for every request to the identity provider.
+    /// </summary>
+    /// <remarks>
+    /// Jellyfin's default named client is built with its dual-stack connect callback, which
+    /// falls back between IPv6 and IPv4. A plain unnamed client hangs until the 100 second
+    /// default timeout on hosts where one address family is black-holed, which showed up as
+    /// a timeout on OID/start on Jellyfin 12 (MaxRink/jellyfin-plugin-sso#2).
+    /// </remarks>
+    /// <returns>The HTTP client.</returns>
+    private HttpClient CreatePluginHttpClient()
+    {
+        var client = _httpClientFactory.CreateClient(NamedClient.Default);
+        var version = System.Diagnostics.FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).FileVersion;
+        client.DefaultRequestHeaders.UserAgent.ParseAdd($"Jellyfin-Plugin-SSO-Auth +{version} (https://github.com/MaxRink/jellyfin-plugin-sso)");
+        return client;
+    }
+
+    private HttpClient CreateOidcHttpClient(OidcClientOptions options)
+    {
+        var client = CreatePluginHttpClient();
+        client.Timeout = options.BackchannelTimeout;
+        return client;
     }
 
     private void Invalidate()
