@@ -44,6 +44,7 @@ namespace Jellyfin.Plugin.SSO_Auth.Api;
 public class SSOController : ControllerBase
 {
     private const string SamlLinkStatePrefix = "link:";
+    private const string UsernameTakenMessage = "A Jellyfin account with this username already exists and is not linked to this provider. Link it from the account linking page, or allow username account adoption for this provider.";
     private readonly IUserManager _userManager;
     private readonly ISessionManager _sessionManager;
     private readonly IAuthorizationContext _authContext;
@@ -718,10 +719,14 @@ public class SSOController : ControllerBase
             && string.Equals(pendingState.Provider, provider, StringComparison.Ordinal)
             && StateManager.TryRemove(response.Data, out var timedState))
         {
-            Guid userId = await CreateCanonicalLinkAndUserIfNotExist("oid", provider, timedState.Id, timedState.Username);
+            Guid? userId = await CreateCanonicalLinkAndUserIfNotExist("oid", provider, timedState.Id, timedState.Username);
+            if (userId is null)
+            {
+                return Conflict(UsernameTakenMessage);
+            }
 
             var authenticationResult = await Authenticate(
-                userId,
+                userId.Value,
                 timedState.Admin,
                 config.EnableAuthorization,
                 config.EnableAllFolders,
@@ -950,8 +955,13 @@ public class SSOController : ControllerBase
             };
 
             var userId = await CreateCanonicalLinkAndUserIfNotExist("oid", provider, subject, username).ConfigureAwait(false);
+            if (userId is null)
+            {
+                return Conflict(UsernameTakenMessage);
+            }
+
             var authenticationResult = await Authenticate(
-                userId,
+                userId.Value,
                 isAdmin,
                 config.EnableAuthorization,
                 config.EnableAllFolders,
@@ -1336,10 +1346,14 @@ public class SSOController : ControllerBase
                 }
             }
 
-            Guid userId = await CreateCanonicalLinkAndUserIfNotExist("saml", provider, samlResponse.GetNameID(), samlResponse.GetNameID());
+            Guid? userId = await CreateCanonicalLinkAndUserIfNotExist("saml", provider, samlResponse.GetNameID(), samlResponse.GetNameID());
+            if (userId is null)
+            {
+                return Conflict(UsernameTakenMessage);
+            }
 
             var authenticationResult = await Authenticate(
-                userId,
+                userId.Value,
                 isAdmin,
                 config.EnableAuthorization,
                 config.EnableAllFolders,
@@ -1404,7 +1418,18 @@ public class SSOController : ControllerBase
         return links;
     }
 
-    private async Task<Guid> CreateCanonicalLinkAndUserIfNotExist(string mode, string provider, string canonicalId, string canonicalName)
+    /// <summary>
+    /// Resolves (or provisions) the Jellyfin user for a provider identity.
+    /// </summary>
+    /// <param name="mode">The mode of the function; SAML or OID.</param>
+    /// <param name="provider">The provider the identity belongs to.</param>
+    /// <param name="canonicalId">The provider's stable identifier for the identity (OIDC sub, SAML NameID).</param>
+    /// <param name="canonicalName">The username the provider reports for the identity.</param>
+    /// <returns>
+    /// The Jellyfin user id, or null when the username is already taken by a local account
+    /// this provider is not allowed to adopt.
+    /// </returns>
+    private async Task<Guid?> CreateCanonicalLinkAndUserIfNotExist(string mode, string provider, string canonicalId, string canonicalName)
     {
         User user = null;
 
@@ -1437,10 +1462,43 @@ public class SSOController : ControllerBase
             }
         }
 
-        // No (valid) userId found? Let's try and find the user by name instead.
+        // Releases before 6.0 keyed links by username. Honour such a link so nobody loses
+        // their account on upgrade; MigrateLegacyUsernameLink rekeys it below.
+        if (user == null && !string.Equals(canonicalId, canonicalName, StringComparison.Ordinal))
+        {
+            try
+            {
+                user = _userManager.GetUserById(GetCanonicalLink(mode, provider, canonicalName));
+            }
+            catch (KeyNotFoundException)
+            {
+                user = null;
+            }
+        }
+
+        // No (valid) link found? Adopt the local account of the same name, unless the
+        // provider is configured not to: adoption hands whoever controls the username claim
+        // any local account of that name, administrators included.
         if (user == null)
         {
-            user = _userManager.GetUserByName(canonicalName);
+            var existing = _userManager.GetUserByName(canonicalName);
+            if (existing != null)
+            {
+                if (UsernameAdoptionDisabled(mode, provider))
+                {
+                    _logger.LogWarning(
+                        "Refusing the login for {Username} on {Provider}: a local account of that name exists but is not linked to this provider, and username account adoption is disabled",
+                        canonicalName,
+                        provider);
+                    return null;
+                }
+
+                _logger.LogWarning(
+                    "Adopting existing local account {Username} for a first login on {Provider}; the provider's username claim is authoritative for this provider",
+                    canonicalName,
+                    provider);
+                user = existing;
+            }
         }
 
         if (user == null)
@@ -1489,6 +1547,16 @@ public class SSOController : ControllerBase
         MigrateLegacyUsernameLink(mode, provider, canonicalId, user);
 
         return userId;
+    }
+
+    private static bool UsernameAdoptionDisabled(string mode, string provider)
+    {
+        return mode switch
+        {
+            "oid" => SSOPlugin.Instance.Configuration.OidConfigs[provider].DisableUsernameAccountAdoption,
+            "saml" => SSOPlugin.Instance.Configuration.SamlConfigs[provider].DisableUsernameAccountAdoption,
+            _ => throw new ArgumentException($"{mode} is not a valid choice between 'saml' and 'oid'"),
+        };
     }
 
     private void MigrateLegacyUsernameLink(string mode, string provider, string canonicalId, User user)

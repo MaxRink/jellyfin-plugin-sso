@@ -86,6 +86,13 @@ public class SamlConfig
     public bool PreserveAdminPermissions { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether a first login for an unlinked identity may adopt
+    /// an existing local Jellyfin account of the same username. When true, such logins are
+    /// refused until the account is linked from the self-service page.
+    /// </summary>
+    public bool DisableUsernameAccountAdoption { get; set; }
+
+    /// <summary>
     /// Gets or sets what roles are checked to determine whether the user is allowed to use Jellyfin.
     /// </summary>
     public string[] Roles { get; set; }
@@ -219,6 +226,13 @@ public class OidConfig
     /// admin role matches. When false (default), admin status is synced strictly from roles.
     /// </summary>
     public bool PreserveAdminPermissions { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a first login for an unlinked identity may adopt
+    /// an existing local Jellyfin account of the same username. When true, such logins are
+    /// refused until the account is linked from the self-service page.
+    /// </summary>
+    public bool DisableUsernameAccountAdoption { get; set; }
 
     /// <summary>
     /// Gets or sets what roles are checked to determine whether the user is allowed to use Jellyfin.
