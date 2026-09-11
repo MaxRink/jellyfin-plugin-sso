@@ -16,6 +16,7 @@
     <None Remove="Config\linking.html" />
     <None Remove="Views\apiClient.js" />
     <None Remove="Views\emby-restyle.css" />
+    <None Remove="Views\linking.css" />
     <EmbeddedResource Include="Config\configPage.html" />
     <EmbeddedResource Include="Config\config.js" />
     <EmbeddedResource Include="Config\style.css" />
@@ -23,6 +24,7 @@
     <EmbeddedResource Include="Config\linking.js" />
     <EmbeddedResource Include="Views\apiClient.js" />
     <EmbeddedResource Include="Views\emby-restyle.css" />
+    <EmbeddedResource Include="Views\linking.css" />
   </ItemGroup>
 
   <ItemGroup>
