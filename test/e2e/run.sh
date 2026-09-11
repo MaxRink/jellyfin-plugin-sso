@@ -70,7 +70,7 @@ echo "  Playwright login test PASSED"
 echo "== verifying plugin provisioned a Jellyfin user (server-side) =="
 python3 - <<'PY'
 import json, urllib.request
-JF = "http://localhost:8096"
+JF = "http://127.0.0.1:8096"
 def get(path, token):
     r = urllib.request.Request(JF + path, headers={"Authorization": f'MediaBrowser Token="{token}"'})
     return json.load(urllib.request.urlopen(r, timeout=30))
