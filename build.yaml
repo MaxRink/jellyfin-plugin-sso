@@ -1,4 +1,4 @@
-name: "SSO Authentication"
+name: "SSO-Auth"
 guid: "505ce9d1-d916-42fa-86ca-673ef241d7df"
 imageUrl: "https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/main/img/logo.png"
 version: "6.0.0.0"
