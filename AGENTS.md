@@ -13,7 +13,7 @@ and targets **Jellyfin 12**.
 
 - **Jellyfin 12** dropped the historical `10.` version prefix (10.11 → 12.0).
 - Plugin targets **`net10.0`** and builds against `Jellyfin.Controller` / `Jellyfin.Model`
-  **`12.0.0-rc2`**. Bump both packages together when a newer 12.x ships.
+  **`12.0.0`**. Bump both packages together when a newer 12.x ships.
 - `build.yaml` must stay in sync: `framework: "net10.0"`, `targetAbi: "12.0.0.0"`.
 - Do **not** re-add an explicit `System.Security.Cryptography.Xml` package reference — it
   is provided by the net10 shared framework, and the standalone package pulls a vulnerable
@@ -49,8 +49,8 @@ Unit tests live in `SSO-Auth.Tests/` (xUnit + Moq, `net10.0`) and run via
 and **Jellyfin 12** in Docker with the built plugin, drives an actual browser
 OIDC login with Playwright, and verifies the plugin provisions a Jellyfin user.
 Run it with `cd test/e2e && ./run.sh` (see `test/e2e/README.md`); it also runs in
-CI via `.github/workflows/e2e.yml`. When Jellyfin 12 GA ships, bump the pinned
-`jellyfin/jellyfin` tag in `test/e2e/docker-compose.yml`. Note: Jellyfin 12
+CI via `.github/workflows/e2e.yml`. Keep the pinned `jellyfin/jellyfin` tag in
+`test/e2e/docker-compose.yml` in sync with the plugin ABI. Note: Jellyfin 12
 lazily creates a default admin named `root` with an empty password (used by the
 test to obtain an admin token).
 

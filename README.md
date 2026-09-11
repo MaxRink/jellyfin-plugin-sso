@@ -36,7 +36,7 @@ This is 100% alpha software! PRs are welcome to improve the code.
 
 ~~There is NO admin configuration! You must use the API to configure the program!~~ Added by [strazto](https://github.com/strazto) in PR [#18](https://github.com/9p4/jellyfin-plugin-sso/pull/18) and [#27](https://github.com/9p4/jellyfin-plugin-sso/pull/27).
 
-**[This is for Jellyfin >=12.0](https://github.com/9p4/jellyfin-plugin-sso/issues/3).** Version 6.0.0.0 targets **Jellyfin 12** (`net10.0`, plugin ABI `12.0.0.0`), built against `Jellyfin.Controller`/`Jellyfin.Model` `12.0.0-rc2`. For Jellyfin 10.11 use the 4.x/5.x releases. As of 5.0.0.0 the SSO login flow works in the web UI **and** in the native Jellyfin mobile apps (Android, and the Expo-based iOS app). Clients where the in-app browser flow is unavailable (e.g. some TVs, Swiftfin) can still log in via [Quick Connect](https://jellyfin.org/docs/general/server/quick-connect).
+**[This is for Jellyfin >=12.0](https://github.com/9p4/jellyfin-plugin-sso/issues/3).** Version 6.0.0.0 targets **Jellyfin 12** (`net10.0`, plugin ABI `12.0.0.0`), built against `Jellyfin.Controller`/`Jellyfin.Model` `12.0.0`. For Jellyfin 10.11 use the 4.x/5.x releases. As of 5.0.0.0 the SSO login flow works in the web UI **and** in the native Jellyfin mobile apps (Android, and the Expo-based iOS app). Clients where the in-app browser flow is unavailable (e.g. some TVs, Swiftfin) can still log in via [Quick Connect](https://jellyfin.org/docs/general/server/quick-connect).
 
 **This README reflects the branch it is currently on! Switch tags to view version-specific documentation!**
 
