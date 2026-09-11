@@ -369,6 +369,24 @@ public class SSOController : ControllerBase
     {
         if (segments.Length == 1)
         {
+            // Providers such as Zitadel encode roles as the keys of a JSON object,
+            // e.g. {"jellyfin_admin": {"org_id": "org_domain"}, "jellyfin_user": {...}}.
+            if (claim.Value.TrimStart().StartsWith('{'))
+            {
+                try
+                {
+                    var keys = JsonConvert.DeserializeObject<IDictionary<string, object>>(claim.Value)?.Keys.ToList();
+                    if (keys is not null)
+                    {
+                        return keys;
+                    }
+                }
+                catch (JsonException)
+                {
+                    // Not JSON after all: treat the raw value as a single role below.
+                }
+            }
+
             return new List<string> { claim.Value };
         }
 
@@ -394,12 +412,17 @@ public class SSOController : ControllerBase
             }
         }
 
-        if (!json.TryGetValue(segments[^1], out var rolesToken) || rolesToken is not JArray rolesArray)
+        if (!json.TryGetValue(segments[^1], out var rolesToken))
         {
             return new List<string>();
         }
 
-        return rolesArray.ToObject<List<string>>() ?? new List<string>();
+        return rolesToken switch
+        {
+            JArray rolesArray => rolesArray.ToObject<List<string>>() ?? new List<string>(),
+            JObject rolesObject => rolesObject.Properties().Select(p => p.Name).ToList(),
+            _ => new List<string>(),
+        };
     }
 
     /// <summary>
