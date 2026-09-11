@@ -3,14 +3,22 @@
     "category": "Authentication",
     "description": "This plugin allows users to sign in through an SSO provider (such as Google, Facebook, or your own provider). This enables one-click signin.\nReview documentation at https://github.com/MaxRink/jellyfin-plugin-sso\n",
     "guid": "505ce9d1-d916-42fa-86ca-673ef241d7df",
-    "name": "SSO Authentication",
+    "name": "SSO-Auth",
     "overview": "Authenticate users against an SSO provider.",
     "owner": "MaxRink",
     "versions": [
       {
+        "changelog": "First stable release for **Jellyfin 12** (`net10.0`, plugin ABI `12.0.0.0`, built against `Jellyfin.Controller`/`Jellyfin.Model` 12.0.0). For Jellyfin 10.11 keep using the 4.x/5.x releases.\n\nThis release also consolidates fixes and features from the wider `jellyfin-plugin-sso` fork network. All adopted work is GPL-3.0; the original authors are preserved in the commit history and credited in the README **Acknowledgements**.\n\n## Upgrade notes\n- **Account linking** now starts from the self-service page (`/SSOViews/linking`) while signed in, via the authenticated `POST {mode}/StartLink/{provider}`. The unauthenticated `?isLinking=true` start is refused. Linking states are single-use, bound to the provider and expire after 10 minutes; SAML responses are validated against the request they answer; an identity already linked to another user is refused.\n- **OpenID links are keyed by the `sub` claim** instead of the username. Existing username-keyed links are migrated automatically on the next login.\n- The release asset and plugin folder are now named `sso-auth_<version>` (package name aligned with the runtime plugin name so Jellyfin can remove superseded versions on upgrade).\n- New per-provider option `disableUsernameAccountAdoption` (OIDC and SAML): refuse a first login whose username matches an unlinked local account instead of adopting it. Off by default.\n- `enabledFolders` is now always granted, also when folder roles are enabled.\n\n## Fixes\n- Linking page works on Jellyfin 12 (it now authenticates with the `Authorization` header; the legacy header is ignored by Jellyfin 12).\n- Requests to the identity provider go through Jellyfin's dual-stack HTTP client with a 30 s timeout and report 502/504 naming the endpoint instead of hanging for 100 s (#2).\n- Pre-existing local/LDAP accounts keep their auth provider; `defaultProvider` owns plugin-created accounts from the start; default library access is only stripped when the plugin manages permissions.\n- Claim values are no longer logged on denied logins; only enabled providers are advertised; provider-supplied values are escaped on the linking page; warnings when discovery trust checks are disabled.\n- Null-safe scopes/roles, persisted redirect path style and unregister provider switch, 404 on unlinking an unknown name, real server version on SSO sessions, disposed avatar downloads, materialised link queries, admin-page checkbox state reset, config-page links open again.\n- Removed the vulnerable `System.Security.Cryptography.Xml` package (provided by the .NET 10 shared framework) and the unused F# helper project.\n\n## Features\n- `roleClaim` accepts several space-separated claim paths and JSON-object-keyed roles (Zitadel); the device-code flow uses the same parser.\n- Inline `data:image/...;base64` avatars (Kanidm, Pocket ID).\n- Cloudflare Access UserInfo failures are reported clearly (`doNotLoadProfile`).\n\n## Verification\nBuilt warning-free with the .NET 10 SDK, unit tests pass, and the end-to-end test (authentik + `jellyfin/jellyfin:12.0` + Playwright) covers the OIDC login, the linking page and the StartLink flow.\n",
+        "checksum": "",
+        "sourceUrl": "",
+        "targetAbi": "12.0.0.0",
+        "timestamp": "2026-09-11T10:29:41Z",
+        "version": "6.0.0.0"
+      },
+      {
         "changelog": "Nightly build\n",
-        "checksum": "528e1def12b42266fa6aca65de7f7093",
-        "sourceUrl": "https://github.com/MaxRink/jellyfin-plugin-sso/releases/download/nightly/sso-authentication_0.0.0.9000.zip",
+        "checksum": "7ef622c17ae42400ee29d031e451bf6e",
+        "sourceUrl": "https://github.com/MaxRink/jellyfin-plugin-sso/releases/download/nightly/sso-auth_0.0.0.9000.zip",
         "targetAbi": "12.0.0.0",
         "timestamp": "2026-08-14T20:33:31Z",
         "version": "0.0.0.9000"
