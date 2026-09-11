@@ -34,7 +34,7 @@ cd test/e2e
 Or point it at a prebuilt plugin artifact (skips the build):
 
 ```bash
-PLUGIN_ZIP=/path/to/sso-authentication_6.0.0.0.zip ./run.sh
+PLUGIN_ZIP=/path/to/sso-auth_6.0.0.0.zip ./run.sh
 ```
 
 Useful env vars:

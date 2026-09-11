@@ -20,6 +20,7 @@ page.on('console', m => log('PAGE:', m.type(), m.text()));
 page.on('pageerror', e => log('PAGEERROR:', e.message));
 
 let ok = false;
+let linkingOk = false;
 try {
   log('navigating to', START);
   await page.goto(START, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -88,6 +89,28 @@ try {
   } else {
     log('SUCCESS: credentials were stored (confirmed by waitForFunction); details read raced with navigation.');
   }
+
+  // Self-service linking page: must authenticate against Jellyfin 12 (Authorization
+  // header), list the provider with the identity that just logged in, and be able to
+  // run the authenticated StartLink flow end to end.
+  log('opening the linking page');
+  await page.goto(`${JF}/SSOViews/linking`, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  const providerBox = page.locator(`.sso-provider-links-container[data-id="${PROVIDER}"]`);
+  await providerBox.waitFor({ state: 'visible', timeout: 45000 });
+  const linked = providerBox.locator(`.sso-link-checkbox[data-id="${AK_USER}"]`);
+  await linked.waitFor({ state: 'attached', timeout: 45000 });
+  log('linking page lists', PROVIDER, 'with linked identity', AK_USER);
+  await shot(page, '06-linking-page');
+
+  await providerBox.locator('.sso-provider-add-link').click();
+  await page.waitForURL(/\/SSOViews\/linking/, { timeout: 45000, waitUntil: 'domcontentloaded' });
+  await page.locator(`.sso-provider-links-container[data-id="${PROVIDER}"] .sso-link-checkbox[data-id="${AK_USER}"]`)
+    .waitFor({ state: 'attached', timeout: 45000 });
+  const count = await page.locator(`.sso-provider-links-container[data-id="${PROVIDER}"] .sso-link-checkbox`).count();
+  if (count !== 1) throw new Error(`expected exactly one linked identity after relinking, got ${count}`);
+  log('StartLink flow completed and returned to the linking page; still one linked identity');
+  await shot(page, '07-after-relink');
+  linkingOk = true;
 } catch (err) {
   log('FAILURE:', err.message);
   await shot(page, '99-failure');
@@ -95,4 +118,4 @@ try {
 } finally {
   await browser.close();
 }
-process.exit(ok ? 0 : 1);
+process.exit(ok && linkingOk ? 0 : 1);
