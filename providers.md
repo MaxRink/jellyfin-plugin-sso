@@ -22,6 +22,10 @@ This section is broken into providers that support Role-Based Access Control (RB
   - ❗ Usernames are numeric
   - ❗ Requires disabling validating OpenID endpoints
 
+### Other Provider Notes
+
+- [Cloudflare Access](#cloudflare-access)
+
 ## General Options, when RBAC is supported
 
 For any provider that supports RBAC, we can configure it as we see fit:
@@ -36,6 +40,20 @@ AdminRoles: ["jellyfin_admin"]
 EnableFolderRoles: false
 FolderRoleMapping: []
 ```
+
+## Cloudflare Access
+
+Enable **Skip OIDC UserInfo Request** in the provider settings. Cloudflare
+Access currently returns its UserInfo response with a malformed combined
+`Content-Type` value:
+
+```http
+Content-Type: application/json; charset=utf-8, application/json
+```
+
+`Content-Type` allows one media type, not a comma-separated list. The OIDC
+client cannot parse this response. When the UserInfo request is skipped, claims
+used for the username, roles, or avatar must be included in the ID token.
 
 ## Authelia
 

@@ -86,6 +86,13 @@ public class SamlConfig
     public bool PreserveAdminPermissions { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether a first login for an unlinked identity may adopt
+    /// an existing local Jellyfin account of the same username. When true, such logins are
+    /// refused until the account is linked from the self-service page.
+    /// </summary>
+    public bool DisableUsernameAccountAdoption { get; set; }
+
+    /// <summary>
     /// Gets or sets what roles are checked to determine whether the user is allowed to use Jellyfin.
     /// </summary>
     public string[] Roles { get; set; }
@@ -221,6 +228,13 @@ public class OidConfig
     public bool PreserveAdminPermissions { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether a first login for an unlinked identity may adopt
+    /// an existing local Jellyfin account of the same username. When true, such logins are
+    /// refused until the account is linked from the self-service page.
+    /// </summary>
+    public bool DisableUsernameAccountAdoption { get; set; }
+
+    /// <summary>
     /// Gets or sets what roles are checked to determine whether the user is allowed to use Jellyfin.
     /// </summary>
     public string[] Roles { get; set; }
@@ -263,7 +277,7 @@ public class OidConfig
     public List<FolderRoleMap> FolderRoleMapping { get; set; }
 
     /// <summary>
-    /// Gets or sets the claim to check roles against. Separated by "."s.
+    /// Gets or sets the claim paths to check roles against. Separated by spaces.
     /// </summary>
     public string RoleClaim { get; set; }
 

@@ -15,24 +15,24 @@
     <None Remove="Config\style.css" />
     <None Remove="Config\linking.html" />
     <None Remove="Views\apiClient.js" />
-    <None Remove="Views\jellyfin-apiClient.esm.min.js" />
     <None Remove="Views\emby-restyle.css" />
+    <None Remove="Views\linking.css" />
     <EmbeddedResource Include="Config\configPage.html" />
     <EmbeddedResource Include="Config\config.js" />
     <EmbeddedResource Include="Config\style.css" />
     <EmbeddedResource Include="Config\linking.html" />
     <EmbeddedResource Include="Config\linking.js" />
     <EmbeddedResource Include="Views\apiClient.js" />
-    <EmbeddedResource Include="Views\jellyfin-apiClient.esm.min.js" />
     <EmbeddedResource Include="Views\emby-restyle.css" />
+    <EmbeddedResource Include="Views\linking.css" />
   </ItemGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Duende.IdentityModel.OidcClient" Version="6.0.1" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.4.0" />
-    <PackageReference Include="Jellyfin.Controller" Version="12.0.0-rc5" />
-    <PackageReference Include="Jellyfin.Model" Version="12.0.0-rc5" />
+    <PackageReference Include="Jellyfin.Controller" Version="12.0.0" />
+    <PackageReference Include="Jellyfin.Model" Version="12.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
@@ -40,10 +40,6 @@
     <PackageReference Include="SerilogAnalyzer" Version="0.15.0" PrivateAssets="All" />
     <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556" PrivateAssets="all" />
     <PackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" PrivateAssets="All" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="Lib\Lib.fsproj" />
   </ItemGroup>
 
   <PropertyGroup>

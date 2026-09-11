@@ -5,7 +5,7 @@
 # then verifies server-side that the plugin provisioned a Jellyfin user.
 #
 # Usage:
-#   PLUGIN_ZIP=/path/to/sso-authentication_X.Y.Z.zip ./run.sh        # use a prebuilt artifact
+#   PLUGIN_ZIP=/path/to/sso-auth_X.Y.Z.zip ./run.sh        # use a prebuilt artifact
 #   ./run.sh                                                          # build via jprm (needs dotnet + jprm)
 #
 # Env:
@@ -65,12 +65,12 @@ docker run --rm --network "$COMPOSE_NET" --user root \
   -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
   -v "$HERE/playwright:/work" -w /work \
   "$PLAYWRIGHT_IMAGE" node sso.test.mjs
-echo "  Playwright login test PASSED"
+echo "  Playwright login + linking-page test PASSED"
 
 echo "== verifying plugin provisioned a Jellyfin user (server-side) =="
 python3 - <<'PY'
 import json, urllib.request
-JF = "http://localhost:8096"
+JF = "http://127.0.0.1:8096"
 def get(path, token):
     r = urllib.request.Request(JF + path, headers={"Authorization": f'MediaBrowser Token="{token}"'})
     return json.load(urllib.request.urlopen(r, timeout=30))

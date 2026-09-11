@@ -244,7 +244,9 @@ const ssoConfigurationPage = {
         });
 
         form_elements.check_fields.forEach((id) => {
-          if (provider[id]) page.querySelector("#" + id).checked = provider[id];
+          // Always assign: a stale checked state would otherwise carry over from the
+          // previously loaded provider when this one has the option off.
+          page.querySelector("#" + id).checked = provider[id] === true;
         });
 
         form_elements.role_map_fields.forEach((id) => {

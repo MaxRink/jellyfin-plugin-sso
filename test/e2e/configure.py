@@ -6,7 +6,7 @@ Idempotent-ish: safe to re-run. Uses only the Python standard library.
 
 Env (with defaults):
   AK_URL            authentik base URL as seen from this script   (http://localhost:9000)
-  JF_URL            Jellyfin base URL as seen from this script     (http://localhost:8096)
+  JF_URL            Jellyfin base URL as seen from this script     (http://127.0.0.1:8096)
   AK_INTERNAL       authentik base URL as seen from inside the network (http://authentik-server:9000)
   JF_INTERNAL_HOST  Jellyfin host:port as seen from inside the network  (jellyfin:8096)
   AK_TOKEN          authentik bootstrap API token                  (authentik-bootstrap-token)
@@ -18,7 +18,7 @@ import urllib.request
 import urllib.error
 
 AK = os.environ.get("AK_URL", "http://localhost:9000")
-JF = os.environ.get("JF_URL", "http://localhost:8096")
+JF = os.environ.get("JF_URL", "http://127.0.0.1:8096")
 AK_INTERNAL = os.environ.get("AK_INTERNAL", "http://authentik-server:9000")
 JF_INTERNAL_HOST = os.environ.get("JF_INTERNAL_HOST", "jellyfin:8096")
 AK_TOKEN = os.environ.get("AK_TOKEN", "authentik-bootstrap-token")
