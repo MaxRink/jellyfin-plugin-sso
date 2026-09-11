@@ -723,15 +723,10 @@ public class SSOController : ControllerBase
             string username = null;
             bool valid = false;
             bool isAdmin = false;
-            var folders = new List<string>();
+            var folders = config.EnabledFolders != null ? new HashSet<string>(config.EnabledFolders) : new HashSet<string>();
             bool enableLiveTv = config.EnableLiveTv;
             bool enableLiveTvManagement = config.EnableLiveTvManagement;
             string avatarUrl = null;
-
-            if (!config.EnableFolderRoles && config.EnabledFolders != null)
-            {
-                folders = new List<string>(config.EnabledFolders);
-            }
 
             if (config.AvatarUrlFormat is not null)
             {
@@ -740,14 +735,7 @@ public class SSOController : ControllerBase
                     (s, claim) => s.Contains($"@{{{claim.Type}}}") ? s.Replace($"@{{{claim.Type}}}", claim.Value) : s);
             }
 
-            string[] segments = string.IsNullOrEmpty(config.RoleClaim)
-                ? Array.Empty<string>()
-                : Regex.Split(config.RoleClaim.Trim(), "(?<!\\\\)\\.");
-
-            if (segments.Any())
-            {
-                segments = segments.Select(i => i.Replace("\\.", ".")).ToArray();
-            }
+            var roleClaimPaths = ParseRoleClaimPaths(config.RoleClaim).ToArray();
 
             foreach (var claim in claims)
             {
@@ -760,50 +748,14 @@ public class SSOController : ControllerBase
                     }
                 }
 
-                if (segments.Any() && claim.Type == segments[0])
+                foreach (var roleClaimPath in roleClaimPaths)
                 {
-                    List<string> roles;
-                    if (segments.Length == 1)
+                    if (claim.Type != roleClaimPath[0])
                     {
-                        roles = new List<string> { claim.Value };
+                        continue;
                     }
-                    else
-                    {
-                        var json = JsonConvert.DeserializeObject<IDictionary<string, object>>(claim.Value);
-                        if (json is null)
-                        {
-                            roles = new List<string>();
-                        }
-                        else
-                        {
-                            bool missingSegment = false;
-                            for (int i = 1; i < segments.Length - 1; i++)
-                            {
-                                var segment = segments[i];
-                                if (!json.TryGetValue(segment, out var nextToken) || nextToken is not JObject nextObject)
-                                {
-                                    missingSegment = true;
-                                    break;
-                                }
 
-                                json = nextObject.ToObject<IDictionary<string, object>>();
-                                if (json is null)
-                                {
-                                    missingSegment = true;
-                                    break;
-                                }
-                            }
-
-                            if (missingSegment || !json.TryGetValue(segments[^1], out var rolesToken) || rolesToken is not JArray rolesArray)
-                            {
-                                roles = new List<string>();
-                            }
-                            else
-                            {
-                                roles = rolesArray.ToObject<List<string>>();
-                            }
-                        }
-                    }
+                    List<string> roles = GetRolesFromClaimPath(claim, roleClaimPath);
 
                     foreach (string role in roles)
                     {
@@ -835,7 +787,7 @@ public class SSOController : ControllerBase
                             {
                                 if (role.Equals(folderRoleMap.Role?.Trim()))
                                 {
-                                    folders.AddRange(folderRoleMap.Folders);
+                                    folders.UnionWith(folderRoleMap.Folders);
                                 }
                             }
                         }
