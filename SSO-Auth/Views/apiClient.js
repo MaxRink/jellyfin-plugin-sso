@@ -1,7 +1,7 @@
 const CREDENTIALS_KEY = "jellyfin_credentials";
 const DEVICE_ID_KEY = "_deviceId2";
 const APP_NAME = "SSO-Auth";
-const APP_VERSION = "6.0.0.1";
+const APP_VERSION = "6.1.0.0";
 const DEVICE_NAME = "Browser";
 
 const sleep = (milliseconds) =>

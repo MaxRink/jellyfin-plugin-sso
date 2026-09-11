@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Signing out</title>
+    <link rel="stylesheet" href="emby-restyle.css" />
+    <link rel="stylesheet" href="linking.css" />
+  </head>
+  <body>
+    <div class="sso-page">
+      <div class="sso-card">
+        <h1 class="sso-title">Signing out</h1>
+        <p id="status" class="sso-status" role="status">
+          Ending your Jellyfin session…
+        </p>
+        <noscript>
+          <p class="sso-status sso-status-error">
+            JavaScript is required to sign out of both Jellyfin and the identity
+            provider.
+          </p>
+        </noscript>
+      </div>
+    </div>
+    <script>
+      // Ends the Jellyfin session the same way the web client does, then hands the browser to
+      // the provider's logout URL. Jellyfin 12 has no server-side hook for this: the identity
+      // provider session only ends if the browser visits the provider, so this page has to do
+      // both steps in order.
+      const CREDENTIALS_KEY = "jellyfin_credentials";
+      const status = document.getElementById("status");
+
+      const serverAddress = () => {
+        const index = window.location.href
+          .toLowerCase()
+          .lastIndexOf("/ssoviews");
+        return index === -1
+          ? window.location.origin
+          : window.location.href.substring(0, index);
+      };
+
+      const providerName = () =>
+        new URLSearchParams(window.location.search).get("provider");
+
+      const readCredentials = () => {
+        try {
+          return JSON.parse(localStorage.getItem(CREDENTIALS_KEY));
+        } catch (error) {
+          return null;
+        }
+      };
+
+      async function endJellyfinSession(address) {
+        const credentials = readCredentials();
+        const server = credentials?.Servers?.[0];
+        if (!server?.AccessToken) {
+          return;
+        }
+
+        try {
+          await fetch(`${address}/Sessions/Logout`, {
+            method: "POST",
+            headers: {
+              Authorization: `MediaBrowser Client="SSO-Auth", Device="Browser", Version="1", Token="${server.AccessToken}"`,
+            },
+          });
+        } catch (error) {
+          console.warn("Could not end the Jellyfin session", error);
+        }
+
+        // Drop the stored session regardless of what the server answered, so the browser does
+        // not keep using a token that may already be revoked.
+        for (const key of Object.keys(localStorage)) {
+          if (key.startsWith("user-")) {
+            localStorage.removeItem(key);
+          }
+        }
+        server.AccessToken = null;
+        server.UserId = null;
+        localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(credentials));
+        localStorage.setItem("enableAutoLogin", "false");
+      }
+
+      async function main() {
+        const address = serverAddress();
+        await endJellyfinSession(address);
+
+        const provider = providerName();
+        if (!provider) {
+          status.textContent = "Signed out of Jellyfin.";
+          window.location.replace(`${address}/web/index.html#/login`);
+          return;
+        }
+
+        status.textContent = "Signing out of the identity provider…";
+        window.location.replace(
+          `${address}/sso/OID/logout/${encodeURIComponent(provider)}`,
+        );
+      }
+
+      main().catch((error) => {
+        console.error("Sign-out failed", error);
+        status.textContent = `Sign-out failed: ${error.message}`;
+        status.classList.add("sso-status-error");
+      });
+    </script>
+  </body>
+</html>

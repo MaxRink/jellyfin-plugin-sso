@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Jellyfin.Plugin.SSO_Auth.Auth;
 using Jellyfin.Plugin.SSO_Auth.Config;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.SSO_Auth;
 
@@ -13,14 +17,21 @@ namespace Jellyfin.Plugin.SSO_Auth;
 /// </summary>
 public class SSOPlugin : BasePlugin<PluginConfiguration>, IPlugin, IHasWebPages
 {
+    private readonly IUserManager _userManager;
+    private readonly ILogger<SSOPlugin> _logger;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="SSOPlugin"/> class.
     /// </summary>
     /// <param name="applicationPaths">Internal Jellyfin interface for the ApplicationPath.</param>
     /// <param name="xmlSerializer">Internal Jellyfin interface for the XML information.</param>
-    public SSOPlugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer)
+    /// <param name="userManager">The user manager, used to apply the SSO-only login setting.</param>
+    /// <param name="logger">The logger.</param>
+    public SSOPlugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer, IUserManager userManager, ILogger<SSOPlugin> logger)
         : base(applicationPaths, xmlSerializer)
     {
+        _userManager = userManager;
+        _logger = logger;
         Instance = this;
     }
 
@@ -38,6 +49,40 @@ public class SSOPlugin : BasePlugin<PluginConfiguration>, IPlugin, IHasWebPages
     /// Gets the GUID of the SSO plugin.
     /// </summary>
     public override Guid Id => Guid.Parse("505ce9d1-d916-42fa-86ca-673ef241d7df");
+
+    /// <summary>
+    /// Saves the configuration, and applies the SSO-only login setting to existing accounts when it
+    /// has changed.
+    /// </summary>
+    /// <param name="configuration">The configuration to save.</param>
+    public override void UpdateConfiguration(BasePluginConfiguration configuration)
+    {
+        var before = Configuration;
+        var wasEnforcing = before.EnforceSsoOnly;
+        var previousExemptions = before.SsoOnlyExemptUsernames ?? Array.Empty<string>();
+
+        base.UpdateConfiguration(configuration);
+
+        var exemptionsChanged = !previousExemptions.SequenceEqual(Configuration.SsoOnlyExemptUsernames ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        if (wasEnforcing == Configuration.EnforceSsoOnly && !exemptionsChanged)
+        {
+            // Nothing to sweep. Checked because the login flow also saves the configuration (to
+            // remember the callback path style), and a sweep there would run on every login.
+            return;
+        }
+
+        foreach (var user in _userManager.GetUsers())
+        {
+            try
+            {
+                SsoOnlyEnforcer.EnforceAsync(_userManager, _logger, user).GetAwaiter().GetResult();
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Could not apply the SSO-only login setting to {Username}", user.Username);
+            }
+        }
+    }
 
     /// <summary>
     /// Returns the available internal web pages of this plugin.
@@ -121,6 +166,11 @@ public class SSOPlugin : BasePlugin<PluginConfiguration>, IPlugin, IHasWebPages
             {
                 Name = "linking.css",
                 EmbeddedResourcePath = $"{GetType().Namespace}.Views.linking.css"
+            },
+            new PluginPageInfo
+            {
+                Name = "logout",
+                EmbeddedResourcePath = $"{GetType().Namespace}.Views.logout.html"
             },
         };
     }

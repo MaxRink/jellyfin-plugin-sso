@@ -15,6 +15,14 @@ and targets **Jellyfin 12**.
 - Plugin targets **`net10.0`** and builds against `Jellyfin.Controller` / `Jellyfin.Model`
   **`12.0.0`**. Bump both packages together when a newer 12.x ships.
 - `build.yaml` must stay in sync: `framework: "net10.0"`, `targetAbi: "12.0.0.0"`.
+- Two client-authentication styles exist and they interact: Duende sends token-endpoint credentials
+  in the body by default, but Pushed Authorization Requests always use an HTTP Basic header. A
+  provider can only be configured one way, so `UseClientSecretBasic` switches the token request to
+  Basic; use it together with `client_secret_basic` at the provider if Pushed Authorization should
+  stay on, otherwise leave it off and disable Pushed Authorization.
+- The logo ships inside the package. `build.yaml` has `image: "img/logo.png"`, jprm copies it in and
+  records it as `image`, and a step in `.github/workflows/build.yml` adds the `imagePath` key that
+  Jellyfin actually reads.
 - Do **not** re-add an explicit `System.Security.Cryptography.Xml` package reference — it
   is provided by the net10 shared framework, and the standalone package pulls a vulnerable
   transitive `System.Security.Cryptography.Pkcs`.
@@ -66,6 +74,25 @@ test to obtain an admin token).
   `CreateCanonicalLinkAndUserIfNotExist` still resolves links keyed by username from
   releases before 6.0 and rekeys them; it returns `null` (→ HTTP 409) when
   `DisableUsernameAccountAdoption` is set and the username belongs to an unlinked local user.
+
+## SSO-only login
+
+`Auth/SsoOnlyAuthProvider.cs` is an `IAuthenticationProvider` that always throws. Accounts whose
+`AuthenticationProviderId` points at it cannot use a password. `Auth/SsoOnlyEnforcer.cs` decides
+which accounts get moved there, and is called from three places: the plugin's
+`UpdateConfiguration` (only when the setting or the exemption list changed, because the login flow
+saves the configuration too), `EventConsumers/UserCreatedConsumer.cs`, and after a successful SSO
+login. Accounts with no SSO link are deliberately left alone so one local administrator keeps a
+password. `ServiceRegistrator.cs` registers the provider and the event consumer.
+
+## Signing out
+
+Jellyfin 12 has no server-side hook in its sign-out path, so `Views/logout.html` does the work in
+the browser: it ends the Jellyfin session the way the web client does, then navigates to
+`GET /sso/OID/logout/{provider}`, which redirects to the provider. That endpoint is anonymous on
+purpose, because by then the browser has no token left. Prefer the provider's
+`end_session_endpoint` from discovery; Authelia does not publish one, so its providers need
+`LogoutUrl` set.
 
 ## Permissions persistence (important)
 

@@ -31,6 +31,7 @@ namespace SSO_Auth.Tests;
 /// Tests for the OID device code flow authentication endpoint.
 /// Each test gets a fresh SSOPlugin instance so state doesn't bleed between tests.
 /// </summary>
+[Collection("PluginInstance")]
 public class OidDeviceAuthTests : IDisposable
 {
     private const string Provider = "test-provider";
@@ -66,7 +67,7 @@ public class OidDeviceAuthTests : IDisposable
         xmlSerializer
             .Setup(x => x.DeserializeFromFile(typeof(PluginConfiguration), It.IsAny<string>()))
             .Returns(new PluginConfiguration());
-        _ = new SSOPlugin(appPaths.Object, xmlSerializer.Object);
+        _ = new SSOPlugin(appPaths.Object, xmlSerializer.Object, new Mock<IUserManager>().Object, new Mock<ILogger<SSOPlugin>>().Object);
 
         _testUser = new User("testuser", "SSO-Auth", "Default") { Id = _testUserId };
 

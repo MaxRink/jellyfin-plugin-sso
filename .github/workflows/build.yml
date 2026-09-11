@@ -30,6 +30,35 @@ jobs:
         with:
           dotnet-target: "${{ inputs.dotnet-target }}"
 
+      # jprm writes the logo into the package as "image", but Jellyfin reads "imagePath"
+      # (resolved relative to the plugin folder), so the key is added here.
+      - name: Point the package metadata at the bundled logo
+        run: |
+          python3 - "${{ steps.jprm.outputs.artifact }}" <<'PY'
+          import json, shutil, sys, tempfile, zipfile
+          from pathlib import Path
+
+          archive = Path(sys.argv[1])
+          with zipfile.ZipFile(archive) as source:
+              entries = {name: source.read(name) for name in source.namelist()}
+
+          meta = json.loads(entries["meta.json"])
+          image = meta.get("image")
+          if not image or image not in entries:
+              print("no bundled image, nothing to do")
+              sys.exit(0)
+
+          meta["imagePath"] = image
+          entries["meta.json"] = json.dumps(meta, indent=4, sort_keys=True).encode()
+
+          with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as handle:
+              with zipfile.ZipFile(handle, "w", zipfile.ZIP_DEFLATED) as target:
+                  for name, payload in entries.items():
+                      target.writestr(name, payload)
+          shutil.move(handle.name, archive)
+          print(f"imagePath set to {image}")
+          PY
+
       - name: Upload Artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # tag=v4.6.2
         with:

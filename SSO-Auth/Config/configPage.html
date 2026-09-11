@@ -673,6 +673,32 @@
                   <label>
                     <input
                       is="emby-checkbox"
+                      id="UseClientSecretBasic"
+                      name="UseClientSecretBasic"
+                      type="checkbox"
+                      class="sso-toggle"
+                    />
+                    <span>Send Client Credentials As Basic Auth</span>
+                  </label>
+                  <div class="fieldDescription checkboxFieldDescription">
+                    Sends the client id and secret in an HTTP Basic
+                    authorization header instead of the request body. Pushed
+                    Authorization Requests always use the header, so enable this
+                    together with
+                    <code>token_endpoint_auth_method: client_secret_basic</code>
+                    on the provider if you want to keep Pushed Authorization
+                    enabled. For Authelia, the alternative is to leave this off
+                    and use <code>client_secret_post</code> with Pushed
+                    Authorization disabled.
+                  </div>
+                </div>
+
+                <div
+                  class="checkboxContainer checkboxContainer-withDescription"
+                >
+                  <label>
+                    <input
+                      is="emby-checkbox"
                       id="DoNotValidateEndpoints"
                       name="DoNotValidateEndpoints"
                       type="checkbox"
@@ -720,6 +746,51 @@
                 </div>
 
                 <div class="inputContainer">
+                  <label class="inputLabel inputLabelUnfocused" for="LogoutUrl"
+                    >Logout URL:</label
+                  >
+                  <input
+                    id="LogoutUrl"
+                    name="LogoutUrl"
+                    is="emby-input"
+                    type="text"
+                    class="sso-text"
+                  />
+                  <div class="fieldDescription">
+                    Where to send the browser to end the session at the
+                    provider. Leave empty to use the provider's own
+                    <code>end_session_endpoint</code>. Authelia does not publish
+                    one, so use <code>https://auth.example.com/logout</code>
+                    there. Users reach it through
+                    <code>/SSOViews/logout?provider=NAME</code>, which signs out
+                    of Jellyfin first.
+                  </div>
+                </div>
+
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="UsernameMappings"
+                    >Username Mappings:</label
+                  >
+                  <textarea
+                    id="UsernameMappings"
+                    name="UsernameMappings"
+                    is="emby-textarea"
+                    class="emby-input sso-json"
+                  ></textarea>
+                  <div class="fieldDescription">
+                    Maps a username from the provider to a different Jellyfin
+                    username, as JSON, for example
+                    <code>{"max.mustermann": "Max"}</code>. Names on the left
+                    are matched without regard to upper or lower case. Use this
+                    when the provider and Jellyfin spell the same person
+                    differently. Matching an account by name already ignores
+                    case, so simple case differences need no entry here.
+                  </div>
+                </div>
+
+                <div class="inputContainer">
                   <label class="inputLabel inputLabelUnfocused" for="RoleClaim"
                     >Scheme Override</label
                   >
@@ -758,6 +829,69 @@
                   class="raised button-submit block emby-button"
                 >
                   <span>Save</span>
+                </button>
+              </div>
+            </div>
+          </form>
+
+          <form id="sso-only-settings" class="esqConfigurationForm">
+            <div
+              is="emby-collapse"
+              data-expanded="false"
+              title="SSO-Only Login (all providers)"
+              class="verticalSection verticalSection-extrabottompadding"
+            >
+              <div class="collapseContent">
+                <div
+                  class="checkboxContainer checkboxContainer-withDescription"
+                >
+                  <label>
+                    <input
+                      is="emby-checkbox"
+                      id="EnforceSsoOnly"
+                      name="EnforceSsoOnly"
+                      type="checkbox"
+                    />
+                    <span>Require SSO For Linked Accounts</span>
+                  </label>
+                  <div class="fieldDescription checkboxFieldDescription">
+                    Turns off password login for every account that has an SSO
+                    link. Those accounts move to an authentication provider that
+                    rejects all passwords, so they can only sign in through SSO.
+                    Accounts without an SSO link are never touched, which keeps
+                    one local administrator able to sign in if SSO breaks. An
+                    account is locked on its next login or link, and the setting
+                    is applied to existing accounts as soon as you save here.
+                  </div>
+                </div>
+
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SsoOnlyExemptUsernames"
+                    >Keep Password Login For These Users:</label
+                  >
+                  <textarea
+                    id="SsoOnlyExemptUsernames"
+                    name="SsoOnlyExemptUsernames"
+                    is="emby-textarea"
+                    class="emby-input"
+                  ></textarea>
+                  <div class="fieldDescription">
+                    One Jellyfin username per line. These accounts keep their
+                    password even when the setting above is on. Upper and lower
+                    case do not matter. Removing a name here locks the account
+                    on the next save.
+                  </div>
+                </div>
+
+                <button
+                  id="SaveSsoOnlySettings"
+                  is="emby-button"
+                  type="button"
+                  class="raised button-submit block emby-button"
+                >
+                  <span>Save SSO-Only Settings</span>
                 </button>
               </div>
             </div>

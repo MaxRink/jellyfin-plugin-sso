@@ -3,8 +3,8 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Jellyfin.Plugin.SSO_Auth</RootNamespace>
-    <AssemblyVersion>6.0.0.1</AssemblyVersion>
-    <FileVersion>6.0.0.1</FileVersion>
+    <AssemblyVersion>6.1.0.0</AssemblyVersion>
+    <FileVersion>6.1.0.0</FileVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
@@ -17,6 +17,7 @@
     <None Remove="Views\apiClient.js" />
     <None Remove="Views\emby-restyle.css" />
     <None Remove="Views\linking.css" />
+    <None Remove="Views\logout.html" />
     <EmbeddedResource Include="Config\configPage.html" />
     <EmbeddedResource Include="Config\config.js" />
     <EmbeddedResource Include="Config\style.css" />
@@ -25,6 +26,7 @@
     <EmbeddedResource Include="Views\apiClient.js" />
     <EmbeddedResource Include="Views\emby-restyle.css" />
     <EmbeddedResource Include="Views\linking.css" />
+    <EmbeddedResource Include="Views\logout.html" />
   </ItemGroup>
 
   <ItemGroup>

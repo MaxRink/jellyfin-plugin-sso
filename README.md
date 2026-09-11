@@ -36,7 +36,7 @@ This is 100% alpha software! PRs are welcome to improve the code.
 
 ~~There is NO admin configuration! You must use the API to configure the program!~~ Added by [strazto](https://github.com/strazto) in PR [#18](https://github.com/9p4/jellyfin-plugin-sso/pull/18) and [#27](https://github.com/9p4/jellyfin-plugin-sso/pull/27).
 
-**[This is for Jellyfin >=12.0](https://github.com/9p4/jellyfin-plugin-sso/issues/3).** Version 6.0.0.0 targets **Jellyfin 12** (`net10.0`, plugin ABI `12.0.0.0`), built against `Jellyfin.Controller`/`Jellyfin.Model` `12.0.0`. For Jellyfin 10.11 use the 4.x/5.x releases. As of 5.0.0.0 the SSO login flow works in the web UI **and** in the native Jellyfin mobile apps (Android, and the Expo-based iOS app). Clients where the in-app browser flow is unavailable (e.g. some TVs, Swiftfin) can still log in via [Quick Connect](https://jellyfin.org/docs/general/server/quick-connect).
+**[This is for Jellyfin >=12.0](https://github.com/9p4/jellyfin-plugin-sso/issues/3).** Version 6.1.0.0 targets **Jellyfin 12** (`net10.0`, plugin ABI `12.0.0.0`), built against `Jellyfin.Controller`/`Jellyfin.Model` `12.0.0`. For Jellyfin 10.11 use the 4.x/5.x releases. As of 5.0.0.0 the SSO login flow works in the web UI **and** in the native Jellyfin mobile apps (Android, and the Expo-based iOS app). Clients where the in-app browser flow is unavailable (e.g. some TVs, Swiftfin) can still log in via [Quick Connect](https://jellyfin.org/docs/general/server/quick-connect).
 
 **This README reflects the branch it is currently on! Switch tags to view version-specific documentation!**
 
@@ -126,6 +126,80 @@ a.raised.emby-button {
 
 For more information, refer to [issue #16](https://github.com/9p4/jellyfin-plugin-sso/issues/16).
 
+### Sending Users To A Page After Login
+
+Add `returnUrl` to the start URL and the browser opens that page once the login
+finishes, for example
+`/sso/OID/start/PROVIDER_NAME?returnUrl=/movies`. The value must be a path on
+this server; anything that could point somewhere else is ignored and the user
+lands on the home page instead. `url` works as well, because that is the name
+the Jellyfin web client uses when it remembers where someone was going.
+
+A Quick Connect code takes priority: if the login carries `?qc=CODE`, the user
+goes to the Quick Connect page regardless of `returnUrl`.
+
+### Signing Out Of The Provider As Well
+
+Signing out of Jellyfin ends the Jellyfin session only. The provider still has
+its own session, so the next click on the SSO button signs the user straight
+back in. To end both, send the user to:
+
+```
+/SSOViews/logout?provider=PROVIDER_NAME
+```
+
+That page ends the Jellyfin session first, then forwards the browser to the
+provider. Where it forwards to is decided in this order:
+
+1. the **Logout URL** set for the provider, if there is one,
+2. the `end_session_endpoint` from the provider's discovery document,
+3. the Jellyfin login page, if the provider offers neither.
+
+Most providers publish `end_session_endpoint`, so the Logout URL can stay empty.
+**Authelia does not publish one**, so set it to `https://auth.example.com/logout`
+there. The request carries `client_id`, plus the Jellyfin login page as both
+`post_logout_redirect_uri` and `rd`, because providers disagree on which one
+they read. Some providers only accept a post-logout redirect that is registered
+with them, so register the Jellyfin login page if the user ends up on an error
+page.
+
+You can add the link the same way as the login button, in the **Branding**
+settings:
+
+```html
+<a
+  class="raised block emby-button"
+  href="https://jellyfin.example.com/SSOViews/logout?provider=PROVIDER_NAME"
+>
+  Sign out of SSO
+</a>
+```
+
+### Requiring SSO For Linked Accounts
+
+**SSO-Only Login** in the admin page turns off password login for every account
+that has an SSO link. Those accounts are moved to an authentication provider
+that rejects every password, so they can only get in through SSO.
+
+Two things keep this from locking everyone out:
+
+- Accounts **without** an SSO link are never touched. A local administrator who
+  has never used SSO keeps their password, so there is always a way back in if
+  the provider is unreachable.
+- The exemption list keeps named accounts on password login even when they do
+  have an SSO link.
+
+Switching the setting off restores password login for the accounts it locked.
+An account is also evaluated when it is created and on every SSO login.
+
+If an account does get locked out, an API key still works:
+
+```bash
+curl -X POST -H "Content-Type: application/json" \
+  -d '"Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider"' \
+  "https://jellyfin.example.com/sso/Unregister/USERNAME?api_key=API_KEY_HERE"
+```
+
 ### SAML
 
 Example for adding a SAML configuration with the API using [curl](https://curl.se/):
@@ -203,6 +277,8 @@ These all require authorization. Append an API key to the end of the request: `c
   - `defaultProvider`: string. The set provider then gets assigned to the user after they have logged in. If it is not set, nothing is changed. With this, a user can login with SSO but is still able to log in via other providers later. See the `Unregister` endpoint. Only accounts created by this plugin are reassigned; pre-existing local or LDAP accounts keep their provider.
   - `disableUsernameAccountAdoption`: boolean. By default the first login of an identity that has no link yet takes over the local Jellyfin account with the same username, administrators included. When true, such logins are refused (HTTP 409) until the account is linked from `/SSOViews/linking`. Existing links are unaffected. Defaults to `false`.
   - `schemeOverride`: string. Sets the scheme for URLs used. Can be useful if the plugin refuses to use HTTPS URLs.
+  - `usernameMappings`: object of strings. Maps a username from the provider to a different Jellyfin username. See the OpenID description above.
+  - `logoutUrl`: string. Where to send the browser to end the session at the provider.
 - GET `SAML/Del/PROVIDER_NAME`: This removes a configuration for SAML for a given provider name.
 - GET `SAML/Get`: Lists the configurations currently available.
 
@@ -222,6 +298,7 @@ These all require authorization. Append an API key to the end of the request: `c
 - POST `OID/DeviceAuth/PROVIDER_NAME`: Device-code / headless login endpoint ([RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)). A client that has completed the OAuth2 device authorization grant with the provider posts the resulting `id_token`; the plugin validates the JWT against the provider's JWKS and exchanges it for a Jellyfin session, applying the same role/folder/Live TV RBAC as the redirect flow. Useful for TVs and other clients without an in-app browser. Post format is JSON:
   - `idToken`: string. The OIDC `id_token` obtained from the device authorization grant.
   - `deviceId`, `deviceName`, `appName`, `appVersion`: string. Client identification, as above.
+- GET `OID/logout/PROVIDER_NAME`: Redirects the browser to the provider's logout URL so the session there ends too. Usually reached through `/SSOViews/logout?provider=PROVIDER_NAME`, which ends the Jellyfin session first. No authorization needed, because the browser has already dropped its token by then, and the endpoint only redirects to a URL from the provider configuration.
 - Quick Connect: append `?qc=CODE` to `OID/start/PROVIDER_NAME` to carry a Jellyfin [Quick Connect](https://jellyfin.org/docs/general/server/quick-connect) code through the login; after authentication the user is redirected to the Quick Connect confirmation page with the code prefilled.
 
 #### Configuration
@@ -255,6 +332,9 @@ These all require authorization. Append an API key to the end of the request: `c
   - `defaultUsernameClaim`: string. The provider will use the claim to create the users' usernames. If not set, it fallbacks to `preferred_username`.
   - `avatarUrlFormat`: string. The URL format for the users avatars. OIDC claims can be used by using the `@{claim_type}` syntax. A claim containing an inline `data:image/...;base64,` picture (Kanidm, Pocket ID) is accepted as well. If not set, the avatars won't change.
   - `doNotLoadProfile`: boolean. Skips the OIDC UserInfo request and relies on the claims in the ID token alone. Required for providers whose UserInfo endpoint is unusable, such as Cloudflare Access (see [providers.md](providers.md)).
+  - `usernameMappings`: object of strings. Maps a username from the provider to a different Jellyfin username, for example `{"max.mustermann": "Max"}`. The name on the left is matched without regard to upper or lower case. Only needed when the two names really differ: finding an existing Jellyfin account by name already ignores case.
+  - `logoutUrl`: string. Where `/SSOViews/logout` sends the browser to end the session at the provider. Leave empty to use the provider's `end_session_endpoint`. Set it for providers that do not publish one, such as Authelia (`https://auth.example.com/logout`).
+  - `useClientSecretBasic`: boolean. Sends the client id and secret in an HTTP Basic authorization header instead of the request body. Pushed Authorization Requests always use the header, so turn this on, and set the provider to `client_secret_basic`, if you want Pushed Authorization enabled. Leave it off for a provider set to `client_secret_post`, and disable Pushed Authorization there instead.
   - `disableHttps`: boolean. Determines whether the OpenID discovery endpoint requires HTTPS.
   - `doNotValidateEndpoints`: boolean. Determines whether the OpenID discovery process will validate endpoints. This may be required for Google.
   - `doNotValidateIssuerName`: boolean. Determines whether the OpenID discovery process will validate the OpenID issuer name.
@@ -262,6 +342,15 @@ These all require authorization. Append an API key to the end of the request: `c
 - GET `OID/Del/PROVIDER_NAME`: This removes a configuration for OpenID for a given provider name.
 - GET `OID/Get`: Lists the configurations currently available.
 - GET `OID/States`: Lists currently active OpenID flows in progress.
+
+### Plugin-Wide Settings
+
+These are not per-provider. Set them in the admin page under **SSO-Only Login**,
+or through the normal Jellyfin plugin configuration API
+(`GET`/`POST /Plugins/505ce9d1d91642fa86ca673ef241d7df/Configuration`):
+
+- `enforceSsoOnly`: boolean. Turns off password login for every account that has an SSO link. Accounts without a link keep their password. Defaults to `false`.
+- `ssoOnlyExemptUsernames`: array of strings. Jellyfin usernames that keep password login anyway. Matched without regard to upper or lower case.
 
 ### Misc
 
@@ -277,7 +366,7 @@ Logging in with an SSO account that has the same username as an existing, unlink
 
 ~~Furthermore, there is no functional admin page (yet). PRs for this are welcome. In the meantime, you have to interact with the API to add or remove configurations.~~ Added by [strazto](https://github.com/strazto) in PR [#18](https://github.com/9p4/jellyfin-plugin-sso/pull/18) and [#27](https://github.com/9p4/jellyfin-plugin-sso/pull/27).
 
-There is also no logout callback. Logging out of Jellyfin will log you out of Jellyfin only, instead of the SSO provider as well.
+~~There is also no logout callback. Logging out of Jellyfin will log you out of Jellyfin only, instead of the SSO provider as well.~~ As of 6.1.0.0 the page at `/SSOViews/logout?provider=NAME` ends both sessions. Jellyfin 12 has no hook in its own sign-out button, so the link has to be placed by hand; see [Signing Out Of The Provider As Well](#signing-out-of-the-provider-as-well).
 
 ~~This only supports Jellyfin on its own domain (for now). This is because I'm using string concatenation for generating some URLs. A PR is welcome to patch this.~~ Fixed in [PR #1](https://github.com/9p4/jellyfin-plugin-sso/pull/1).
 
