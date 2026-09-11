@@ -1430,6 +1430,7 @@ public class SSOController : ControllerBase
     /// </returns>
     private async Task<Guid?> CreateCanonicalLinkAndUserIfNotExist(string mode, string provider, string canonicalId, string canonicalName)
     {
+        var settings = GetProvisioningSettings(mode, provider);
         User user = null;
 
         // First try to get the user by its id in case it was already registered before
@@ -1483,7 +1484,7 @@ public class SSOController : ControllerBase
             var existing = _userManager.GetUserByName(canonicalName);
             if (existing != null)
             {
-                if (UsernameAdoptionDisabled(mode, provider))
+                if (settings.DisableUsernameAccountAdoption)
                 {
                     _logger.LogWarning(
                         "Refusing the login for {Username} on {Provider}: a local account of that name exists but is not linked to this provider, and username account adoption is disabled",
@@ -1504,21 +1505,31 @@ public class SSOController : ControllerBase
         {
             _logger.LogInformation($"SSO user {canonicalName} ({canonicalId}) doesn't exist, creating...");
             user = await _userManager.CreateUserAsync(canonicalName).ConfigureAwait(false);
-            user.AuthenticationProviderId = GetType().FullName;
+
+            // DefaultProvider, when configured, names the provider that should own plugin-created
+            // accounts from the start (e.g. an LDAP plugin); otherwise the id is this plugin,
+            // which is not a real authentication provider, so password attempts fall through to
+            // Default and meet the random password below.
+            user.AuthenticationProviderId = string.IsNullOrWhiteSpace(settings.DefaultProvider)
+                ? GetType().FullName
+                : settings.DefaultProvider.Trim();
             // https://jonathancrozier.com/blog/how-to-generate-a-cryptographically-secure-random-string-in-dot-net-with-c-sharp
             user.Password = _cryptoProvider.CreatePasswordHash(Convert.ToBase64String(RandomNumberGenerator.GetBytes(64))).ToString();
             await _userManager.UpdateUserAsync(user).ConfigureAwait(false);
 
-            // Strip Jellyfin's default library permissions exactly once, on creation. New SSO
-            // users must not inherit access to every folder: either the provider's role mapping
-            // will set their folders below, or they default to none as the config text promises.
-            // Persist via UpdatePolicyAsync (Jellyfin 10.11+/12 no longer save permissions through
-            // UpdateUserAsync, jellyfin/jellyfin#16298).
-            var newUserPolicy = _userManager.GetUserDto(user).Policy;
-            newUserPolicy.EnableAllFolders = false;
-            newUserPolicy.EnabledFolders = Array.Empty<Guid>();
-            await _userManager.UpdatePolicyAsync(user.Id, newUserPolicy).ConfigureAwait(false);
-            user = _userManager.GetUserById(user.Id);
+            if (settings.EnableAuthorization)
+            {
+                // Strip Jellyfin's default library permissions exactly once, on creation. With
+                // authorization enabled the provider's roles decide access, so start from none as
+                // the config text promises. With it disabled the plugin does not manage permissions
+                // and Jellyfin's own defaults stand. Persist via UpdatePolicyAsync (Jellyfin
+                // 10.11+/12 no longer save permissions through UpdateUserAsync, jellyfin/jellyfin#16298).
+                var newUserPolicy = _userManager.GetUserDto(user).Policy;
+                newUserPolicy.EnableAllFolders = false;
+                newUserPolicy.EnabledFolders = Array.Empty<Guid>();
+                await _userManager.UpdatePolicyAsync(user.Id, newUserPolicy).ConfigureAwait(false);
+                user = _userManager.GetUserById(user.Id);
+            }
 
             // Make sure there aren't any trailing existing links
             var links = GetCanonicalLinks(mode, provider);
@@ -1586,14 +1597,19 @@ public class SSOController : ControllerBase
         return (new MemoryStream(await avatarResponse.Content.ReadAsByteArrayAsync().ConfigureAwait(false)), downloadedContentType);
     }
 
-    private static bool UsernameAdoptionDisabled(string mode, string provider)
+    private static (bool EnableAuthorization, string DefaultProvider, bool DisableUsernameAccountAdoption) GetProvisioningSettings(string mode, string provider)
     {
-        return mode switch
+        switch (mode)
         {
-            "oid" => SSOPlugin.Instance.Configuration.OidConfigs[provider].DisableUsernameAccountAdoption,
-            "saml" => SSOPlugin.Instance.Configuration.SamlConfigs[provider].DisableUsernameAccountAdoption,
-            _ => throw new ArgumentException($"{mode} is not a valid choice between 'saml' and 'oid'"),
-        };
+            case "oid":
+                var oid = SSOPlugin.Instance.Configuration.OidConfigs[provider];
+                return (oid.EnableAuthorization, oid.DefaultProvider, oid.DisableUsernameAccountAdoption);
+            case "saml":
+                var saml = SSOPlugin.Instance.Configuration.SamlConfigs[provider];
+                return (saml.EnableAuthorization, saml.DefaultProvider, saml.DisableUsernameAccountAdoption);
+            default:
+                throw new ArgumentException($"{mode} is not a valid choice between 'saml' and 'oid'");
+        }
     }
 
     private void MigrateLegacyUsernameLink(string mode, string provider, string canonicalId, User user)
@@ -1941,7 +1957,11 @@ public class SSOController : ControllerBase
         policy.EnableLiveTvAccess = enableLiveTv;
         policy.EnableLiveTvManagement = enableLiveTvAdmin;
 
-        if (!string.IsNullOrEmpty(defaultProvider))
+        // Only migrate accounts this plugin owns: reassigning unconditionally would hijack
+        // pre-existing users (e.g. a local break-glass admin, or LDAP-managed accounts) on
+        // their first SSO login and break their password path.
+        if (!string.IsNullOrEmpty(defaultProvider)
+            && string.Equals(user.AuthenticationProviderId, GetType().FullName, StringComparison.Ordinal))
         {
             policy.AuthenticationProviderId = defaultProvider;
             _logger.LogInformation("Set default login provider to " + defaultProvider);
