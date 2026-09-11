@@ -169,6 +169,8 @@ public class SSOController : ControllerBase
             options.Policy.Discovery.ValidateEndpoints = !config.DoNotValidateEndpoints; // For Google and other providers with different endpoints
             options.Policy.Discovery.RequireHttps = !config.DisableHttps;
             options.Policy.Discovery.ValidateIssuerName = !config.DoNotValidateIssuerName;
+
+            WarnAboutRelaxedDiscovery(config);
             var oidcClient = new OidcClient(options);
             var currentState = timedState.State;
             LoginResult result;
@@ -578,6 +580,8 @@ public class SSOController : ControllerBase
             options.Policy.Discovery.ValidateEndpoints = !config.DoNotValidateEndpoints; // For Google and other providers with different endpoints
             options.Policy.Discovery.RequireHttps = !config.DisableHttps;
             options.Policy.Discovery.ValidateIssuerName = !config.DoNotValidateIssuerName;
+
+            WarnAboutRelaxedDiscovery(config);
             var oidcClient = new OidcClient(options);
             var state = await oidcClient.PrepareLoginAsync().ConfigureAwait(false);
 
@@ -1904,6 +1908,32 @@ public class SSOController : ControllerBase
         _logger.LogInformation("Auth request created...");
 
         return await _sessionManager.AuthenticateDirect(authRequest).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Logs the discovery trust checks a provider has switched off.
+    /// </summary>
+    /// <remarks>
+    /// Each of these exists for a real provider quirk, but they weaken how far the discovery
+    /// document can be trusted, and nothing else in the plugin surfaces that they are set.
+    /// </remarks>
+    /// <param name="config">The provider configuration.</param>
+    private void WarnAboutRelaxedDiscovery(OidConfig config)
+    {
+        if (config.DisableHttps)
+        {
+            _logger.LogWarning("HTTPS is not required for OpenID discovery on {Endpoint}; the discovery document and tokens may travel in the clear", config.OidEndpoint?.Trim());
+        }
+
+        if (config.DoNotValidateIssuerName)
+        {
+            _logger.LogWarning("Issuer name validation is disabled for {Endpoint}; the discovery document is no longer checked against the configured issuer", config.OidEndpoint?.Trim());
+        }
+
+        if (config.DoNotValidateEndpoints)
+        {
+            _logger.LogWarning("Endpoint validation is disabled for {Endpoint}; the provider may advertise endpoints on unrelated hosts", config.OidEndpoint?.Trim());
+        }
     }
 
     private void Invalidate()
