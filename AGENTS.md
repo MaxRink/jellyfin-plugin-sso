@@ -23,8 +23,10 @@ and targets **Jellyfin 12**.
 
 - `SSO-Auth/` — the plugin (C#). `Api/SSOController.cs` holds the OIDC + SAML endpoints and
   the shared `Authenticate(...)` method; `WebResponse.cs` builds the browser/native-app
-  login handoff HTML/JS; `Saml.cs` handles SAML; `Config/` holds the admin UI assets.
-- `SSO-Auth/Lib/` — small F# helper project (`Lib.fsproj`, also `net10.0`).
+  login handoff HTML/JS; `Saml.cs` handles SAML; `Config/` holds the admin UI and the
+  self-service linking page; `Views/apiClient.js` is the small authenticated API client the
+  linking page uses (Jellyfin 12 ignores the legacy `X-Emby-Authorization` header, so it must
+  send `Authorization: MediaBrowser ...`).
 - `build.yaml` — JPRM plugin metadata (version, ABI, artifacts, changelog).
 
 ## Build / test / lint
@@ -53,6 +55,17 @@ CI via `.github/workflows/e2e.yml`. Keep the pinned `jellyfin/jellyfin` tag in
 `test/e2e/docker-compose.yml` in sync with the plugin ABI. Note: Jellyfin 12
 lazily creates a default admin named `root` with an empty password (used by the
 test to obtain an admin token).
+
+## Account linking and identity keys
+
+- Linking starts only from the authenticated `POST {mode}/StartLink/{provider}` endpoint
+  (called by `Config/linking.js`). States in `StateManager` / `SamlLinkStateManager` are
+  single-use, bound to the issuing provider and expire after 10 minutes; SAML responses are
+  checked with `Saml.Response.IsResponseTo(requestId, recipient)`.
+- OpenID links (`CanonicalLinks`) are keyed by the `sub` claim, SAML links by the NameID.
+  `CreateCanonicalLinkAndUserIfNotExist` still resolves links keyed by username from
+  releases before 6.0 and rekeys them; it returns `null` (→ HTTP 409) when
+  `DisableUsernameAccountAdoption` is set and the username belongs to an unlinked local user.
 
 ## Permissions persistence (important)
 

@@ -28,7 +28,7 @@ This plugin allows users to sign in through an SSO provider (such as Google, Mic
 
 https://user-images.githubusercontent.com/17993169/149681516-f93b43f5-fa5c-4c1f-a909-e5414878a864.mp4
 
-Existing users may link new SSO accounts, or remove existing links using self-service at `/SSOViews/linking`.
+Existing users may link new SSO accounts, or remove existing links using self-service at `/SSOViews/linking`. Since 6.0.0.0 a linking flow can only be started from that page while signed in (the old unauthenticated `?isLinking=true` start is refused), and OpenID links are keyed by the provider's stable `sub` claim instead of the username; links from earlier releases are migrated on the next login.
 
 ## Current State:
 
@@ -170,6 +170,7 @@ The API is all done from a base URL of `/sso/`
 
 - POST `SAML/start/PROVIDER_NAME`: This is the SAML POST endpoint. It accepts a form response from the SAML provider and returns HTML and JavaScript for the client to login with a given provider name.
 - GET `SAML/start/PROVIDER_NAME`: This is the SAML initiator: it will begin the authorization flow for SAML with a given provider name.
+- POST `SAML/StartLink/PROVIDER_NAME`: Starts an account-linking flow for the signed-in Jellyfin user (requires authorization) and returns the provider URL to navigate to. The SAML response is bound to the request ID and consumer URL of that flow; a response for any other request is rejected.
 - POST `SAML/Auth/PROVIDER_NAME`: This is the SAML client-side API: the HTML and JavaScript client will call this endpoint to receive Jellyfin credentials given a provider name. Post format is in JSON with the following keys:
   - `deviceId`: string. Device ID.
   - `deviceName`: string. Device name.
@@ -188,7 +189,7 @@ These all require authorization. Append an API key to the end of the request: `c
   - `enabled`: boolean. Determines if the provider is enabled or not.
   - `enableAuthorization`: boolean: Determines if the plugin sets permissions for the user. If false, the user will start with no permissions and an administrator will add permissions. If disabled, then the permissions of users will not be modified and the Jellyfin defaults will be used instead.
   - `enableAllFolders`: boolean. Determines if the client logging in is allowed access to all folders.
-  - `enabledFolders`: array of strings. If `enableAllFolders` is set to false, then this will be used to determine what folders the users who log in through this provider are allowed to use.
+  - `enabledFolders`: array of strings. If `enableAllFolders` is set to false, then this will be used to determine what folders the users who log in through this provider are allowed to use. These folders are always granted, in addition to any granted through `folderRoleMapping`.
   - `roles`: array of strings. This validates the SAML response against the `Role` attribute. If a user has any of these roles, then the user is authenticated. Leave blank to disable role checking.
   - `adminRoles`: array of strings. This uses SAML response's `Role` attributes. If a user has any of these roles, then the user is an admin. Leave blank to disable (default is to not enable admin permissions).
   - `preserveAdminPermissions`: boolean. When true, the plugin will only ever elevate users to administrator based on roles and will never revoke the administrator flag from an account that already has it. Defaults to `false`: admin status is synced strictly from the SAML response on every login.
@@ -199,7 +200,8 @@ These all require authorization. Append an API key to the end of the request: `c
   - `liveTvManagementRoles`: array of strings. If `enableLiveTvRoles` is enabled, then the user's roles will be checked against these. If the user is granted permission, then the user will be able to manage Live TV.
   - `enableLiveTv`: boolean. Whether to allow Live TV by default. This applies even if `enableLiveTvRoles` is enabled.
   - `enableLiveTvManagement`: boolean. Whether to allow Live TV management by default. This applies even if `enableLiveTvRoles` is enabled.
-  - `defaultProvider`: string. The set provider then gets assigned to the user after they have logged in. If it is not set, nothing is changed. With this, a user can login with SSO but is still able to log in via other providers later. See the `Unregister` endpoint.
+  - `defaultProvider`: string. The set provider then gets assigned to the user after they have logged in. If it is not set, nothing is changed. With this, a user can login with SSO but is still able to log in via other providers later. See the `Unregister` endpoint. Only accounts created by this plugin are reassigned; pre-existing local or LDAP accounts keep their provider.
+  - `disableUsernameAccountAdoption`: boolean. By default the first login of an identity that has no link yet takes over the local Jellyfin account with the same username, administrators included. When true, such logins are refused (HTTP 409) until the account is linked from `/SSOViews/linking`. Existing links are unaffected. Defaults to `false`.
   - `schemeOverride`: string. Sets the scheme for URLs used. Can be useful if the plugin refuses to use HTTPS URLs.
 - GET `SAML/Del/PROVIDER_NAME`: This removes a configuration for SAML for a given provider name.
 - GET `SAML/Get`: Lists the configurations currently available.
@@ -210,6 +212,7 @@ These all require authorization. Append an API key to the end of the request: `c
 
 - GET `OID/redirect/PROVIDER_NAME`: This is the OpenID callback path. This will return HTML and JavaScript for the client to login with a given provider name.
 - GET `OID/start/PROVIDER_NAME`: This is the OpenID initiator: it will begin the authorization flow for OpenID with a given provider name.
+- POST `OID/StartLink/PROVIDER_NAME`: Starts an account-linking flow for the signed-in Jellyfin user (requires authorization) and returns the provider URL to navigate to. States are single-use, bound to the provider that issued them and expire after 10 minutes.
 - POST `OID/Auth/PROVIDER_NAME`: This is the OpenID client-side API: the HTML and JavaScript client will call this endpoint to receive Jellyfin credentials for a given provider name. Post format is in JSON with the following keys:
   - `deviceId`: string. Device ID.
   - `deviceName`: string. Device name.
@@ -232,7 +235,7 @@ These all require authorization. Append an API key to the end of the request: `c
   - `enabled`: boolean. Determines if the provider is enabled or not.
   - `enableAuthorization`: boolean: Determines if the plugin sets permissions for the user. If false, the user will start with no permissions and an administrator will add permissions. If disabled, then the permissions of users will not be modified and the Jellyfin defaults will be used instead.
   - `enableAllFolders`: boolean. Determines if the client logging in is allowed access to all folders.
-  - `enabledFolders`: array of strings. If `enableAllFolders` is set to false, then this will be used to determine what folders the users who log in through this provider are allowed to use.
+  - `enabledFolders`: array of strings. If `enableAllFolders` is set to false, then this will be used to determine what folders the users who log in through this provider are allowed to use. These folders are always granted, in addition to any granted through `folderRoleMapping`.
   - `roles`: array of strings. This validates the OpenID response against the claim set in `roleClaim`. If a user has any of these roles, then the user is authenticated. Leave blank to disable role checking. This currently only works for Keycloak (to my knowledge).
   - `adminRoles`: array of strings. This uses the OpenID response against the claim set in `roleClaim`. If a user has any of these roles, then the user is an admin. Leave blank to disable (default is to not enable admin permissions).
   - `preserveAdminPermissions`: boolean. When true, the plugin will only ever elevate users to administrator based on roles and will never revoke the administrator flag from an account that already has it. Defaults to `false`: admin status is synced strictly from the OIDC response on every login.
@@ -243,13 +246,15 @@ These all require authorization. Append an API key to the end of the request: `c
   - `liveTvManagementRoles`: array of strings. If `enableLiveTvRoles` is enabled, then the user's roles will be checked against these. If the user is granted permission, then the user will be able to manage Live TV.
   - `enableLiveTv`: boolean. Whether to allow Live TV by default. This applies even if `enableLiveTvRoles` is enabled.
   - `enableLiveTvManagement`: boolean. Whether to allow Live TV management by default. This applies even if `enableLiveTvRoles` is enabled.
-  - `roleClaim`: string. This is the value in the OpenID response to check for roles. For Keycloak, it is `realm_access.roles` by default. The first element is the claim type, the subsequent values are to parse the JSON of the claim value. Use a "\\." to denote a literal ".". This expects a list of strings from the OIDC server.
+  - `roleClaim`: string. This is the value in the OpenID response to check for roles. For Keycloak, it is `realm_access.roles` by default. The first element is the claim type, the subsequent values are to parse the JSON of the claim value. Use a "\\." to denote a literal ".". Several claim paths may be given separated by spaces (for example `realm_access.roles groups`); roles from all of them are combined. The value may be a list of strings, or a JSON object whose keys are the role names (as Zitadel's `urn:zitadel:iam:org:project:roles` claim).
   - `oidScopes` : array of strings. Each contains an additional scope name to include in the OIDC request.
     - For some OIDC providers (For example, [authelia](https://github.com/9p4/jellyfin-plugin-sso/issues/23#issuecomment-1112237616)), additional scopes may be required in order to validate group membership in role claims.
     - Leave empty to only request the default scopes.
-  - `defaultProvider`: string. The set provider then gets assigned to the user after they have logged in. If it is not set, nothing is changed. With this, a user can login with SSO but is still able to log in via other providers later. See the `Unregister` endpoint.
+  - `defaultProvider`: string. The set provider then gets assigned to the user after they have logged in. If it is not set, nothing is changed. With this, a user can login with SSO but is still able to log in via other providers later. See the `Unregister` endpoint. Only accounts created by this plugin are reassigned; pre-existing local or LDAP accounts keep their provider.
+  - `disableUsernameAccountAdoption`: boolean. By default the first login of an identity that has no link yet takes over the local Jellyfin account with the same username, administrators included. When true, such logins are refused (HTTP 409) until the account is linked from `/SSOViews/linking`. Existing links are unaffected. Defaults to `false`.
   - `defaultUsernameClaim`: string. The provider will use the claim to create the users' usernames. If not set, it fallbacks to `preferred_username`.
-  - `avatarUrlFormat`: string. The URL format for the users avatars. OIDC claims can be used by using the `@{claim_type}` syntax. If not set, the avatars won't change.
+  - `avatarUrlFormat`: string. The URL format for the users avatars. OIDC claims can be used by using the `@{claim_type}` syntax. A claim containing an inline `data:image/...;base64,` picture (Kanidm, Pocket ID) is accepted as well. If not set, the avatars won't change.
+  - `doNotLoadProfile`: boolean. Skips the OIDC UserInfo request and relies on the claims in the ID token alone. Required for providers whose UserInfo endpoint is unusable, such as Cloudflare Access (see [providers.md](providers.md)).
   - `disableHttps`: boolean. Determines whether the OpenID discovery endpoint requires HTTPS.
   - `doNotValidateEndpoints`: boolean. Determines whether the OpenID discovery process will validate endpoints. This may be required for Google.
   - `doNotValidateIssuerName`: boolean. Determines whether the OpenID discovery process will validate the OpenID issuer name.
@@ -264,7 +269,7 @@ These all require authorization. Append an API key to the end of the request: `c
 
 ## Limitations
 
-Logging in with an SSO account that has the same username as an existing Jellyfin account will override the permissions for the user. Use caution when overriding the administrator account!
+Logging in with an SSO account that has the same username as an existing, unlinked Jellyfin account adopts that account (and, with `enableAuthorization`, overrides its permissions). Use caution when overriding the administrator account! Set `disableUsernameAccountAdoption` on the provider once your users are linked to turn this off.
 
 > When `enableAuthorization` is on, permissions (including the administrator flag) are synced from the provider's roles on every login: a login that does not match any `adminRoles` entry revokes admin, unless `preserveAdminPermissions` is enabled on the provider. Make sure your role mapping is correct before logging in with an admin account.
 
@@ -342,7 +347,15 @@ so that it refers to your fork.
 This Jellyfin 12 release consolidates work from the wider `jellyfin-plugin-sso` fork ecosystem. All upstream forks are licensed **GPL-3.0**, the same license as this project, and their authors are credited below (and in the individual commit history via `Co-authored-by` trailers where applicable):
 
 - **[AlexBocken](https://github.com/AlexBocken/jellyfin-plugin-sso)** — native mobile-app (Android / Expo iOS) SSO login support with error surfacing, the restyled sign-in handoff page, and the stale-canonical-link login fix.
-- **[Buco7854](https://github.com/Buco7854/jellyfin-plugin-sso)** — `preserveAdminPermissions` option so logins no longer silently revoke admin when role mapping doesn't match, and persisting role-mapped permissions through `UpdatePolicyAsync` (#367).
+- **[Buco7854](https://github.com/Buco7854/jellyfin-plugin-sso)** (Arnaud Grimbert) — `preserveAdminPermissions` option so logins no longer silently revoke admin when role mapping doesn't match, persisting role-mapped permissions through `UpdatePolicyAsync` (#367), the secured account-linking flow (authenticated `StartLink`, single-use provider-bound states, SAML `InResponseTo` checks) and its reworked self-service page, the Jellyfin 12 linking-page API client, and the package-name alignment.
+- **[derSoerrn95](https://github.com/derSoerrn95/jellyfin-plugin-oidc)** (Sören Borgstedt) — a series of hardening fixes: escaping provider-supplied values on the linking page, not logging claim values on denied logins, advertising only enabled providers, null-safe scopes and roles, persisting the redirect path style and the unregister provider switch, materialising link queries, disposing avatar downloads, 404 on unlinking unknown names, reporting the real server version on SSO sessions, warnings for relaxed discovery checks, and the opt-out from adopting local accounts by username.
+- **[ZigZagT](https://github.com/ZigZagT/jellyfin-plugin-sso)** — graceful handling of Cloudflare Access's UserInfo endpoint, `roleClaim` accepting several claim paths, always honouring `enabledFolders`, and config-page link/help-text fixes.
+- **[vanutp](https://github.com/vanutp/jellyfin-plugin-sso)** (Ivan Filipenkov) — keying OpenID links on the `sub` claim instead of the username.
+- **[kiliankoe](https://github.com/kiliankoe/jellyfin-plugin-sso)** (Kilian Koeltzsch) — rebasing the sub-keyed linking onto the linking flow, migrating username-keyed links, and removing the unused F# helper project; several of the commits above were adopted from this fork's consolidated history.
+- **[michaelkuty](https://github.com/michaelkuty/jellyfin-plugin-sso)** — roles encoded as JSON object keys (Zitadel).
+- **[eivarin](https://github.com/eivarin/jellyfin-plugin-sso)** — inline `data:` avatar images (Kanidm, Pocket ID).
+- **[dangerouslaser](https://github.com/dangerouslaser/jellyfin-plugin-oidc)** — keeping pre-existing accounts on their own auth provider and only stripping default library access when the plugin manages permissions.
+- **[ghadfield32](https://github.com/ghadfield32/jellyfin-plugin-sso)** (Geoffrey) — resetting checkbox state when switching providers in the admin page.
 - **[basil-squared](https://github.com/basil-squared/Authentikate)** — account-linking fix that carries the linking user id through `TimedAuthorizeState`.
 - **[dustinyschild](https://github.com/dustinyschild/jellyfin-plugin-sso)** — the OID device-code-flow authentication endpoint (`POST OID/DeviceAuth/{provider}`, RFC 8628).
 - **[primeral](https://github.com/primeral/jellyfin-plugin-ssoplus)** — carrying a Quick Connect code through the OIDC login.
