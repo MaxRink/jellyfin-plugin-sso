@@ -17,6 +17,7 @@ using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.SSO_Auth.Api.Avatar;
 using Jellyfin.Plugin.SSO_Auth.Api.Crypto;
+using Jellyfin.Plugin.SSO_Auth.Api.Migration;
 using Jellyfin.Plugin.SSO_Auth.Api.Saml;
 using Jellyfin.Plugin.SSO_Auth.Auth;
 using Jellyfin.Plugin.SSO_Auth.Config;
@@ -822,7 +823,8 @@ public class SSOController : ControllerBase
                 config.PreserveAdminPermissions,
                 config.ApplyContentDownloadPermissionOnEveryLogin ? config.EnableContentDownloading : null,
                 config.PreserveUnmanagedFolders,
-                (config.EnabledFolders ?? Array.Empty<string>()).Concat((config.FolderRoleMapping ?? new List<FolderRoleMap>()).Where(map => map != null).SelectMany(map => map.Folders ?? new List<string>())))
+                (config.EnabledFolders ?? Array.Empty<string>()).Concat((config.FolderRoleMapping ?? new List<FolderRoleMap>()).Where(map => map != null).SelectMany(map => map.Folders ?? new List<string>())),
+                config.Migration)
                 .ConfigureAwait(false);
             return Ok(authenticationResult);
         }
@@ -1068,7 +1070,8 @@ public class SSOController : ControllerBase
                 config.PreserveAdminPermissions,
                 config.ApplyContentDownloadPermissionOnEveryLogin ? config.EnableContentDownloading : null,
                 config.PreserveUnmanagedFolders,
-                (config.EnabledFolders ?? Array.Empty<string>()).Concat((config.FolderRoleMapping ?? new List<FolderRoleMap>()).Where(map => map != null).SelectMany(map => map.Folders ?? new List<string>())))
+                (config.EnabledFolders ?? Array.Empty<string>()).Concat((config.FolderRoleMapping ?? new List<FolderRoleMap>()).Where(map => map != null).SelectMany(map => map.Folders ?? new List<string>())),
+                config.Migration)
                 .ConfigureAwait(false);
 
             return Ok(authenticationResult);
@@ -1471,7 +1474,8 @@ public class SSOController : ControllerBase
                 config.PreserveAdminPermissions,
                 config.ApplyContentDownloadPermissionOnEveryLogin ? config.EnableContentDownloading : null,
                 config.PreserveUnmanagedFolders,
-                (config.EnabledFolders ?? Array.Empty<string>()).Concat((config.FolderRoleMapping ?? new List<FolderRoleMap>()).Where(map => map != null).SelectMany(map => map.Folders ?? new List<string>())))
+                (config.EnabledFolders ?? Array.Empty<string>()).Concat((config.FolderRoleMapping ?? new List<FolderRoleMap>()).Where(map => map != null).SelectMany(map => map.Folders ?? new List<string>())),
+                config.Migration)
                 .ConfigureAwait(false);
             return Ok(authenticationResult);
         }
@@ -1539,6 +1543,8 @@ public class SSOController : ControllerBase
     /// </returns>
     private async Task<Guid?> CreateCanonicalLinkAndUserIfNotExist(string mode, string provider, string canonicalId, string canonicalName)
     {
+        var model = ProviderModelMigration.Get(SSOPlugin.Instance.Configuration, mode, provider);
+        ProviderModelMigration.EnsureAuthority(mode, model.Provider, model.Migration);
         var settings = GetProvisioningSettings(mode, provider);
         canonicalName = ResolveMappedUsername(mode, provider, canonicalName);
         User user = null;
@@ -1566,6 +1572,12 @@ public class SSOController : ControllerBase
             // below instead of incorrectly trying to create a user that already exists.
             if (user == null)
             {
+                if (model.Migration.Enabled)
+                {
+                    // A reviewed identity must never silently move to a replacement account.
+                    return null;
+                }
+
                 _logger.LogWarning($"SSO canonical link for {canonicalName} points to missing user {userId}; removing stale link");
                 var staleLinks = GetCanonicalLinks(mode, provider);
                 staleLinks.Remove(canonicalId);
@@ -1575,7 +1587,7 @@ public class SSOController : ControllerBase
 
         // Releases before 6.0 keyed links by username. Honour such a link so nobody loses
         // their account on upgrade; the consumed legacy key is migrated below.
-        if (user == null && !string.Equals(canonicalId, canonicalName, StringComparison.Ordinal))
+        if (!model.Migration.Enabled && user == null && !string.Equals(canonicalId, canonicalName, StringComparison.Ordinal))
         {
             var legacyLinks = GetCanonicalLinks(mode, provider);
             var legacyKey = legacyLinks.Keys.FirstOrDefault(key => string.Equals(key, canonicalName, StringComparison.OrdinalIgnoreCase));
@@ -1687,10 +1699,10 @@ public class SSOController : ControllerBase
         {
             case "oid":
                 var oid = SSOPlugin.Instance.Configuration.OidConfigs[provider];
-                return (oid.EnableAuthorization, oid.DefaultProvider, oid.DisableUsernameAccountAdoption, oid.EnableContentDownloading);
+                return (oid.EnableAuthorization, oid.DefaultProvider, oid.DisableUsernameAccountAdoption || oid.Migration?.Enabled == true, oid.EnableContentDownloading);
             case "saml":
                 var saml = SSOPlugin.Instance.Configuration.SamlConfigs[provider];
-                return (saml.EnableAuthorization, saml.DefaultProvider, saml.DisableUsernameAccountAdoption, saml.EnableContentDownloading);
+                return (saml.EnableAuthorization, saml.DefaultProvider, saml.DisableUsernameAccountAdoption || saml.Migration?.Enabled == true, saml.EnableContentDownloading);
             default:
                 throw new ArgumentException($"{mode} is not a valid choice between 'saml' and 'oid'");
         }
@@ -1869,6 +1881,9 @@ public class SSOController : ControllerBase
             return BadRequest("The SSO provider did not return a usable user identifier.");
         }
 
+        var model = ProviderModelMigration.Get(SSOPlugin.Instance.Configuration, mode, provider);
+        ProviderModelMigration.EnsureAuthority(mode, model.Provider, model.Migration);
+
         SerializableDictionary<string, Guid> links = null;
         try
         {
@@ -1928,8 +1943,35 @@ public class SSOController : ControllerBase
     /// <param name="enableContentDownloading">Optional download permission to apply when authorization is managed.</param>
     /// <param name="preserveUnmanagedFolders">Whether to preserve library grants outside the provider's mappings.</param>
     /// <param name="managedFolders">Every library managed by the provider.</param>
-    private async Task<AuthenticationResult> Authenticate(Guid userId, bool isAdmin, bool enableAuthorization, bool enableAllFolders, string[] enabledFolders, bool enableLiveTv, bool enableLiveTvAdmin, AuthResponse authResponse, string defaultProvider, string avatarUrl, bool preserveAdmin, bool? enableContentDownloading = null, bool preserveUnmanagedFolders = false, IEnumerable<string> managedFolders = null)
+    /// <param name="migration">Optional explicit identity and manual folder model.</param>
+    private async Task<AuthenticationResult> Authenticate(Guid userId, bool isAdmin, bool enableAuthorization, bool enableAllFolders, string[] enabledFolders, bool enableLiveTv, bool enableLiveTvAdmin, AuthResponse authResponse, string defaultProvider, string avatarUrl, bool preserveAdmin, bool? enableContentDownloading = null, bool preserveUnmanagedFolders = false, IEnumerable<string> managedFolders = null, ProviderMigration migration = null)
     {
+        if (migration?.Enabled == true)
+        {
+            // Persist before any policy write. Configuration-only rollback is unsafe after use.
+            lock (migration)
+            {
+                if (!migration.PolicyApplied)
+                {
+                    migration.PolicyApplied = true;
+                    try
+                    {
+                        SSOPlugin.Instance.UpdateConfiguration(SSOPlugin.Instance.Configuration);
+                    }
+                    catch
+                    {
+                        migration.PolicyApplied = false;
+                        throw;
+                    }
+                }
+            }
+
+            migration.ManualFolders.TryGetValue(userId.ToString("D"), out var manual);
+            enableAllFolders |= manual?.AllFolders == true;
+            enabledFolders = (enabledFolders ?? Array.Empty<string>()).Concat(manual?.Folders ?? Array.Empty<string>()).ToArray();
+            preserveUnmanagedFolders = false;
+        }
+
         User user = _userManager.GetUserById(userId);
 
         // Jellyfin 10.11's UpdateUserAsync no longer persists modified permission/preference rows,

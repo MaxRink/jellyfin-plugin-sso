@@ -55,6 +55,9 @@ public class SamlConfig
     private SerializableDictionary<string, Guid> _canonicalLinks;
     private SerializableDictionary<string, string> _usernameMappings;
 
+    /// <summary>Gets or sets the explicitly reviewed identity and folder model. Existing configurations stay in legacy mode.</summary>
+    public ProviderMigration Migration { get; set; } = new();
+
     /// <summary>
     /// Gets or sets the SAML information endpoint.
     /// </summary>
@@ -225,6 +228,9 @@ public class OidConfig
 {
     private SerializableDictionary<string, Guid> _canonicalLinks;
     private SerializableDictionary<string, string> _usernameMappings;
+
+    /// <summary>Gets or sets the explicitly reviewed identity and folder model. Existing configurations stay in legacy mode.</summary>
+    public ProviderMigration Migration { get; set; } = new();
 
     /// <summary>
     /// Gets or sets the OpenID well-known information endpoint.
