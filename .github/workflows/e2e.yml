@@ -38,6 +38,12 @@ jobs:
           jprm --verbosity=info plugin build . --dotnet-framework net10.0 --output ./e2e-artifacts
           echo "PLUGIN_ZIP=$(ls "$PWD"/e2e-artifacts/*.zip | head -1)" >> "$GITHUB_ENV"
 
+      - name: Initialize shared test secret
+        run: |
+          e2e_secret=$(openssl rand -hex 32)
+          echo "::add-mask::$e2e_secret"
+          echo "AUTHENTIK_SECRET_KEY=$e2e_secret" >> "$GITHUB_ENV"
+
       - name: Run E2E SSO login test
         working-directory: test/e2e
         env:
