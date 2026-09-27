@@ -35,7 +35,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -889,7 +888,7 @@ public class SSOController : ControllerBase
             var jwksJson = await httpClient.GetStringAsync(jwksUri).ConfigureAwait(false);
             var jwks = new Microsoft.IdentityModel.Tokens.JsonWebKeySet(jwksJson);
 
-            var validationParams = new TokenValidationParameters
+            var validationParams = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
             {
                 ValidIssuer = issuer,
                 ValidAudience = config.OidClientId?.Trim(),
