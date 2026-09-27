@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SSO-Auth", "SSO-Auth\SSO-Au
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SSO-Auth.Tests", "SSO-Auth.Tests\SSO-Auth.Tests.csproj", "{73F4875A-E336-47CF-8162-7E5BCFD3DDF4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SSO-Migration", "tools\SSO-Migration\SSO-Migration.csproj", "{ED787FA4-FA43-4C98-99A2-AC27A9EB775E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -16,6 +18,10 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{ED787FA4-FA43-4C98-99A2-AC27A9EB775E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ED787FA4-FA43-4C98-99A2-AC27A9EB775E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ED787FA4-FA43-4C98-99A2-AC27A9EB775E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ED787FA4-FA43-4C98-99A2-AC27A9EB775E}.Release|Any CPU.Build.0 = Release|Any CPU
 		{C30A5CFB-B27E-4E83-9E96-1E0362B36748}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{C30A5CFB-B27E-4E83-9E96-1E0362B36748}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C30A5CFB-B27E-4E83-9E96-1E0362B36748}.Release|Any CPU.ActiveCfg = Release|Any CPU

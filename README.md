@@ -476,3 +476,7 @@ Thanks to these projects, without which I would have been pulling my hair out im
 ## Something funny about the origins of this plugin
 
 It totally slipped my mind, but I had [requested this functionality a few years back](https://github.com/jellyfin/jellyfin/issues/2012). What goes around comes around, I guess.
+
+### Optional identity and library migration
+
+Jellyfin 12 providers can opt into reviewed subject-only identities and explicit manual library grants using the [offline migration guide](docs/identity-migration.md). Existing providers keep their behavior until migrated. The tool offers preview, complete identity/grant review, private backups and guarded rollback; it does not migrate automatically.

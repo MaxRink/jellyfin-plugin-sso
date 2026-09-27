@@ -45,6 +45,17 @@ jobs:
           KEEP_UP: "1"
         run: ./run.sh
 
+      - name: Migrate and repeat browser login
+        working-directory: test/e2e
+        run: |
+          python3 migrate.py prepare
+          docker run --rm --network sso-e2e_ssonet --user root \
+            -e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= -e NO_PROXY='*' -e no_proxy='*' \
+            -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+            -v "$PWD/playwright:/work" -w /work \
+            mcr.microsoft.com/playwright:v1.55.0-noble node sso.test.mjs
+          python3 migrate.py verify
+
       - name: Upload Playwright screenshots
         if: always()
         uses: actions/upload-artifact@v4

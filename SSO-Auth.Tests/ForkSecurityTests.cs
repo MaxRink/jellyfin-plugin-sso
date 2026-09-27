@@ -148,7 +148,7 @@ public partial class OidDeviceAuthTests
         var method = typeof(SSOController).GetMethod("Authenticate", BindingFlags.NonPublic | BindingFlags.Instance)!;
         await (Task)method.Invoke(_controller, new object?[] { _testUserId, false, true, false,
             new[] { granted.ToString() }, false, false, new AuthResponse(), null, null, false, false, true,
-            new[] { revoked.ToString(), granted.ToString() } })!;
+            new[] { revoked.ToString(), granted.ToString() }, null })!;
         Assert.Contains(manual, policy.EnabledFolders);
         Assert.Contains(granted, policy.EnabledFolders);
         Assert.DoesNotContain(revoked, policy.EnabledFolders);
@@ -164,7 +164,7 @@ public partial class OidDeviceAuthTests
         _userManager.Setup(m => m.GetUserDto(_testUser, It.IsAny<string>())).Returns(new MediaBrowser.Model.Dto.UserDto { Policy = policy });
         var method = typeof(SSOController).GetMethod("Authenticate", BindingFlags.NonPublic | BindingFlags.Instance)!;
         await (Task)method.Invoke(_controller, new object?[] { _testUserId, false, false, false,
-            Array.Empty<string>(), false, false, new AuthResponse(), null, null, false, false, false, null })!;
+            Array.Empty<string>(), false, false, new AuthResponse(), null, null, false, false, false, null, null })!;
         Assert.True(policy.EnableLiveTvAccess);
         Assert.True(policy.EnableLiveTvManagement);
         Assert.True(policy.EnableContentDownloading);
