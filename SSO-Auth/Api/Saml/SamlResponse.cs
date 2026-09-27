@@ -131,6 +131,7 @@ internal sealed class SamlResponse : IDisposable
             {
                 certificates.Add(X509CertificateLoader.LoadCertificate(Convert.FromBase64String(secondaryCertificateStr)));
             }
+
             return certificates;
         }
         catch
@@ -139,6 +140,7 @@ internal sealed class SamlResponse : IDisposable
             {
                 certificate.Dispose();
             }
+
             throw;
         }
     }

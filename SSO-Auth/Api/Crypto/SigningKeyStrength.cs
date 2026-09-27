@@ -28,6 +28,8 @@ internal static class SigningKeyStrength
     internal static bool IsAcceptableRsaKeySize(int keySizeBits) => keySizeBits >= MinimumRsaKeyBits;
 
     /// <summary>Whether an IdentityModel signing key meets the same policy used for SAML certificates.</summary>
+    /// <param name="key">The IdentityModel signing key to check.</param>
+    /// <returns><see langword="true"/> when the key meets the minimum signing-key policy.</returns>
     internal static bool IsAcceptableSigningKey(SecurityKey key) => key switch
     {
         RsaSecurityKey rsa when rsa.Rsa is not null => IsAcceptableRsaKeySize(rsa.Rsa.KeySize),
