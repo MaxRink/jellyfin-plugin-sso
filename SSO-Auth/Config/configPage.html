@@ -256,6 +256,38 @@
                   </div>
                 </div>
                 <div class="inputContainer">
+                  <label class="inputLabel" for="OidSecretFile"
+                    >Client secret file</label
+                  >
+                  <input
+                    is="emby-input"
+                    id="OidSecretFile"
+                    class="sso-text"
+                    type="text"
+                  />
+                  <div class="fieldDescription">
+                    Optional path inside the Jellyfin server, such as
+                    /run/secrets/jellyfin_oidc. An unreadable or empty file
+                    rejects login.
+                  </div>
+                </div>
+                <div class="inputContainer">
+                  <label class="inputLabel" for="OidSecretEnvironmentVariable"
+                    >Client secret environment variable</label
+                  >
+                  <input
+                    is="emby-input"
+                    id="OidSecretEnvironmentVariable"
+                    class="sso-text"
+                    type="text"
+                  />
+                  <div class="fieldDescription">
+                    Optional variable name, not its value. Choose either a file
+                    or an environment variable; clear the stored secret after
+                    configuring an external source.
+                  </div>
+                </div>
+                <div class="inputContainer">
                   <label
                     class="inputLabel inputLabelUnfocused"
                     for="EnabledFolders"
@@ -543,6 +575,82 @@
                   </div>
                 </div>
 
+                <div
+                  class="checkboxContainer checkboxContainer-withDescription"
+                >
+                  <label
+                    ><input
+                      is="emby-checkbox"
+                      id="OverrideDefaultScopes"
+                      class="sso-toggle"
+                      type="checkbox"
+                    /><span>Override default scopes</span></label
+                  >
+                  <div class="fieldDescription">
+                    Omit profile from the default scopes. openid is always
+                    included.
+                  </div>
+                </div>
+                <div class="inputContainer">
+                  <label class="inputLabel" for="OidAuthorizationParameters"
+                    >Additional authorization parameters (JSON)</label
+                  >
+                  <textarea
+                    is="emby-textarea"
+                    id="OidAuthorizationParameters"
+                    class="sso-text emby-textarea"
+                  ></textarea>
+                  <div class="fieldDescription">
+                    For example: {"prompt":"select_account","acr_values":"mfa"}.
+                    Client, state, nonce, redirect and PKCE parameters cannot be
+                    overridden.
+                  </div>
+                </div>
+                <div
+                  class="checkboxContainer checkboxContainer-withDescription"
+                >
+                  <label
+                    ><input
+                      is="emby-checkbox"
+                      id="PreserveUnmanagedFolders"
+                      class="sso-toggle"
+                      type="checkbox"
+                    /><span
+                      >Preserve manually assigned folders outside this
+                      provider's mappings</span
+                    ></label
+                  >
+                  <div class="fieldDescription">
+                    Mapped folders are still granted or revoked by roles.
+                    Folders removed from every mapping become unmanaged.
+                  </div>
+                </div>
+                <div class="inputContainer">
+                  <label class="inputLabel" for="EnableContentDownloading"
+                    >Content downloads</label
+                  >
+                  <select is="emby-select" id="EnableContentDownloading">
+                    <option value="">Leave unchanged</option>
+                    <option value="true">Allow</option>
+                    <option value="false">Deny</option>
+                  </select>
+                  <div class="fieldDescription">
+                    Applied to new accounts when authorization is enabled.
+                  </div>
+                </div>
+                <div class="checkboxContainer">
+                  <label
+                    ><input
+                      is="emby-checkbox"
+                      id="ApplyContentDownloadPermissionOnEveryLogin"
+                      class="sso-toggle"
+                      type="checkbox"
+                    /><span
+                      >Also apply download permission to existing accounts at
+                      every SSO login</span
+                    ></label
+                  >
+                </div>
                 <div class="inputContainer">
                   <label class="inputLabel inputLabelUnfocused" for="OidScopes"
                     >Request Additional Scopes:</label

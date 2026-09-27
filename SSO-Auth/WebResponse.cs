@@ -600,6 +600,10 @@ const sleep = (milliseconds) => {
         }
 
         // JSON-encoded because it is emitted into a JavaScript string literal below.
+        var dataLiteral = JsonSerializer.Serialize(data);
+        var authUrlLiteral = JsonSerializer.Serialize(punycodeBaseUrl + "/sso/" + Uri.EscapeDataString(mode) + "/Auth/" + Uri.EscapeDataString(provider));
+        var baseUrlLiteral = JsonSerializer.Serialize(punycodeBaseUrl);
+        var infoUrlLiteral = JsonSerializer.Serialize(punycodeBaseUrl + "/System/Info/Public");
         var landingUrlLiteral = JsonSerializer.Serialize(punycodeBaseUrl + "/web/index.html" + landingFragment);
 
         return Base + @"
@@ -630,7 +634,7 @@ async function getServerVersion() {
     // one the resulting session should report. Falls back to the value this page
     // used to hardcode if the lookup fails for any reason.
     try {
-        const resp = await fetch('" + punycodeBaseUrl + @"/System/Info/Public');
+        const resp = await fetch(" + infoUrlLiteral + @");
         if (resp.ok) {
             const info = await resp.json();
             if (info && info.Version) {
@@ -646,7 +650,7 @@ async function getServerVersion() {
 
 async function main() {
     try {
-        var data = '" + data + @"';
+        var data = " + dataLiteral + @";
 
         // Reuse the web client's existing device id and server entry when present so the
         // session we create matches what the app/browser already knows about this server.
@@ -658,7 +662,12 @@ async function main() {
 
         var deviceId = localStorage.getItem(""_deviceId2"");
         if (deviceId == null) {
-            deviceId = generateDeviceId();
+            try {
+                if (window.NativeShell && window.NativeShell.AppHost && typeof window.NativeShell.AppHost.deviceId === 'function') {
+                    deviceId = window.NativeShell.AppHost.deviceId();
+                }
+            } catch (e) { /* Fall back to the browser device id below. */ }
+            deviceId = deviceId || generateDeviceId();
             localStorage.setItem(""_deviceId2"", deviceId);
         }
 
@@ -671,7 +680,7 @@ async function main() {
 
         var request = {deviceId, appName, appVersion, deviceName, data};
 
-        var url = '" + punycodeBaseUrl + "/sso/" + mode + "/Auth/" + provider + @"';
+        var url = " + authUrlLiteral + @";
 
         let response = await new Promise((resolve, reject) => {
            var xhr = new XMLHttpRequest();
@@ -709,13 +718,17 @@ async function main() {
             credentials = null;
         }
         if (credentials == null || credentials['Servers'] == null || credentials['Servers'][0] == null) {
-            credentials = { Servers: [{}] };
+            credentials = { Servers: [] };
         }
 
-        var serverEntry = credentials['Servers'][0];
+        var serverEntry = credentials['Servers'].find(function (entry) { return entry.Id === serverId; });
+        if (!serverEntry) {
+            serverEntry = {};
+        }
+        credentials['Servers'] = [serverEntry].concat(credentials['Servers'].filter(function (entry) { return entry !== serverEntry; }));
         serverEntry['Id'] = serverId;
         if (serverEntry['ManualAddress'] == null) {
-            serverEntry['ManualAddress'] = '" + punycodeBaseUrl + @"';
+            serverEntry['ManualAddress'] = " + baseUrlLiteral + @";
         }
         serverEntry['AccessToken'] = accessToken;
         serverEntry['UserId'] = jellyfinUserId;

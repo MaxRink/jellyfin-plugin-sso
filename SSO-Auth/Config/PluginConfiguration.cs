@@ -81,6 +81,21 @@ public class SamlConfig
     public bool EnableAuthorization { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether manually granted folders absent from this provider's mappings are preserved.
+    /// </summary>
+    public bool PreserveUnmanagedFolders { get; set; }
+
+    /// <summary>
+    /// Gets or sets the download permission for new users, or null to keep Jellyfin's default.
+    /// </summary>
+    public bool? EnableContentDownloading { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the download permission is also applied to existing users at login.
+    /// </summary>
+    public bool ApplyContentDownloadPermissionOnEveryLogin { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether all folders are allowed by default.
     /// </summary>
     public bool EnableAllFolders { get; set; }
@@ -226,6 +241,12 @@ public class OidConfig
     /// </summary>
     public string OidSecret { get; set; }
 
+    /// <summary>Gets or sets an optional file containing the client secret, read at login.</summary>
+    public string OidSecretFile { get; set; }
+
+    /// <summary>Gets or sets an optional environment variable containing the client secret.</summary>
+    public string OidSecretEnvironmentVariable { get; set; }
+
     /// <summary>
     /// Gets or sets a value indicating whether the provider is enabled.
     /// </summary>
@@ -235,6 +256,21 @@ public class OidConfig
     /// Gets or sets a value indicating whether RBAC is enabled.
     /// </summary>
     public bool EnableAuthorization { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether manually granted folders absent from this provider's mappings are preserved.
+    /// </summary>
+    public bool PreserveUnmanagedFolders { get; set; }
+
+    /// <summary>
+    /// Gets or sets the download permission for new users, or null to keep Jellyfin's default.
+    /// </summary>
+    public bool? EnableContentDownloading { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the download permission is also applied to existing users at login.
+    /// </summary>
+    public bool ApplyContentDownloadPermissionOnEveryLogin { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether all folders are allowed by default.
@@ -334,6 +370,16 @@ public class OidConfig
     /// Gets or Sets additional Scopes to request access to in the authorization request.
     /// </summary>
     public string[] OidScopes { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to omit the default profile scope. The openid scope is always requested.
+    /// </summary>
+    public bool OverrideDefaultScopes { get; set; }
+
+    /// <summary>
+    /// Gets or sets provider-specific authorization parameters as a JSON object. Protocol security parameters cannot be overridden.
+    /// </summary>
+    public string OidAuthorizationParameters { get; set; }
 
     /// <summary>
     /// Gets or sets the default provider the user after logging in with SSO.
