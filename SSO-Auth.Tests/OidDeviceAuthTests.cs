@@ -32,7 +32,7 @@ namespace SSO_Auth.Tests;
 /// Each test gets a fresh SSOPlugin instance so state doesn't bleed between tests.
 /// </summary>
 [Collection("PluginInstance")]
-public class OidDeviceAuthTests : IDisposable
+public partial class OidDeviceAuthTests : IDisposable
 {
     private const string Provider = "test-provider";
     private const string Issuer = "https://auth.example.com";
@@ -104,6 +104,7 @@ public class OidDeviceAuthTests : IDisposable
             providerManager.Object,
             BuildHttpClientFactory(),
             serverConfig.Object);
+        _controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
     }
 
     // --- Helpers ---

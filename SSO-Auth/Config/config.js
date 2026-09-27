@@ -239,53 +239,56 @@ const ssoConfigurationPage = {
     );
   },
   loadProvider: (page, provider_name) => {
-    ApiClient.getPluginConfiguration(ssoConfigurationPage.pluginUniqueId).then(
-      (config) => {
-        var provider = config.OidConfigs[provider_name] || {};
+    return ApiClient.getPluginConfiguration(
+      ssoConfigurationPage.pluginUniqueId,
+    ).then((config) => {
+      var provider = config.OidConfigs[provider_name] || {};
 
-        const form_elements = ssoConfigurationPage.listArgumentsByType(page);
+      const form_elements = ssoConfigurationPage.listArgumentsByType(page);
 
-        page.querySelector("#OidProviderName").value = provider_name;
+      page.querySelector("#OidProviderName").value = provider_name;
+      page.querySelector("#EnableContentDownloading").value =
+        provider.EnableContentDownloading == null
+          ? ""
+          : String(provider.EnableContentDownloading);
 
-        form_elements.text_fields.forEach((id) => {
-          if (provider[id]) page.querySelector("#" + id).value = provider[id];
-        });
+      form_elements.text_fields.forEach((id) => {
+        page.querySelector("#" + id).value = provider[id] || "";
+      });
 
-        form_elements.json_fields.forEach((id) => {
-          if (provider[id])
-            page.querySelector("#" + id).value = JSON.stringify(provider[id]);
-        });
+      form_elements.json_fields.forEach((id) => {
+        page.querySelector("#" + id).value = provider[id]
+          ? JSON.stringify(provider[id])
+          : "";
+      });
 
-        form_elements.text_list_fields.forEach((id) => {
-          if (provider[id])
-            ssoConfigurationPage.fillTextList(
-              provider[id],
-              page.querySelector("#" + id),
-            );
-        });
+      form_elements.text_list_fields.forEach((id) => {
+        ssoConfigurationPage.fillTextList(
+          provider[id] || [],
+          page.querySelector("#" + id),
+        );
+      });
 
-        form_elements.folder_list_fields.forEach((id) => {
-          if (provider[id]) {
-            ssoConfigurationPage.populateEnabledFolders(
-              provider[id],
-              page.querySelector(`#${id}`),
-            );
-          }
-        });
+      form_elements.folder_list_fields.forEach((id) => {
+        {
+          ssoConfigurationPage.populateEnabledFolders(
+            provider[id] || [],
+            page.querySelector(`#${id}`),
+          );
+        }
+      });
 
-        form_elements.check_fields.forEach((id) => {
-          // Always assign: a stale checked state would otherwise carry over from the
-          // previously loaded provider when this one has the option off.
-          page.querySelector("#" + id).checked = provider[id] === true;
-        });
+      form_elements.check_fields.forEach((id) => {
+        // Always assign: a stale checked state would otherwise carry over from the
+        // previously loaded provider when this one has the option off.
+        page.querySelector("#" + id).checked = provider[id] === true;
+      });
 
-        form_elements.role_map_fields.forEach((id) => {
-          const elem = page.querySelector(`#${id}`);
-          if (provider[id])
-            ssoConfigurationPage.populateRoleMappings(provider[id], elem);
-        });
-      },
-    );
+      form_elements.role_map_fields.forEach((id) => {
+        const elem = page.querySelector(`#${id}`);
+        ssoConfigurationPage.populateRoleMappings(provider[id] || [], elem);
+      });
+    });
   },
   deleteProvider: (page, provider_name) => {
     if (
@@ -319,73 +322,78 @@ const ssoConfigurationPage = {
       });
     });
   },
-  saveProvider: (page, provider_name) => {
-    return new Promise((resolve) => {
-      const form_elements = ssoConfigurationPage.listArgumentsByType(page);
+  saveProvider: async (page, provider_name) => {
+    provider_name = provider_name.trim();
+    if (!provider_name) throw new Error("Missing provider name");
+    const form_elements = ssoConfigurationPage.listArgumentsByType(page);
 
-      ApiClient.getPluginConfiguration(
-        ssoConfigurationPage.pluginUniqueId,
-      ).then((config) => {
-        var current_config = {};
-        if (config.OidConfigs.hasOwnProperty(provider_name)) {
-          current_config = config.OidConfigs[provider_name];
-        }
+    const config = await ApiClient.getPluginConfiguration(
+      ssoConfigurationPage.pluginUniqueId,
+    );
+    var current_config = {};
+    if (config.OidConfigs.hasOwnProperty(provider_name)) {
+      current_config = config.OidConfigs[provider_name];
+    }
 
-        form_elements.text_fields.forEach((id) => {
-          const value = page.querySelector("#" + id).value;
-          if (value) {
-            current_config[id] = page.querySelector("#" + id).value;
-          } else {
-            current_config[id] = null;
-          }
-        });
-
-        form_elements.json_fields.forEach((id) => {
-          const value = page.querySelector("#" + id).value;
-          if (value) {
-            current_config[id] = JSON.parse(value);
-          } else {
-            current_config[id] = null;
-          }
-        });
-
-        form_elements.check_fields.forEach((id) => {
-          current_config[id] = page.querySelector("#" + id).checked;
-        });
-
-        form_elements.text_list_fields.forEach((id) => {
-          current_config[id] = ssoConfigurationPage.parseTextList(
-            page.querySelector("#" + id),
-          );
-        });
-
-        form_elements.folder_list_fields.forEach((id) => {
-          const elem = page.querySelector(`#${id}`);
-          current_config[id] =
-            ssoConfigurationPage.serializeEnabledFolders(elem);
-        });
-
-        form_elements.role_map_fields.forEach((id) => {
-          const elem = page.querySelector(`#${id}`);
-          current_config[id] = ssoConfigurationPage.serializeRoleMappings(elem);
-        });
-
-        config.OidConfigs[provider_name] = current_config;
-
-        ApiClient.updatePluginConfiguration(
-          ssoConfigurationPage.pluginUniqueId,
-          config,
-        ).then(function (result) {
-          Dashboard.processPluginConfigurationUpdateResult(result);
-          ssoConfigurationPage.loadConfiguration(page);
-          ssoConfigurationPage.loadProvider(page, provider_name);
-
-          page.querySelector("#selectProvider").value = provider_name;
-          Dashboard.alert("Settings saved.");
-          resolve();
-        });
-      });
+    form_elements.text_fields.forEach((id) => {
+      const value = page.querySelector("#" + id).value;
+      if (value) {
+        current_config[id] = page.querySelector("#" + id).value;
+      } else {
+        current_config[id] = null;
+      }
     });
+
+    form_elements.json_fields.forEach((id) => {
+      const value = page.querySelector("#" + id).value;
+      if (value) {
+        current_config[id] = JSON.parse(value);
+      } else {
+        current_config[id] = null;
+      }
+    });
+
+    form_elements.check_fields.forEach((id) => {
+      current_config[id] = page.querySelector("#" + id).checked;
+    });
+
+    form_elements.text_list_fields.forEach((id) => {
+      current_config[id] = ssoConfigurationPage.parseTextList(
+        page.querySelector("#" + id),
+      );
+    });
+
+    form_elements.folder_list_fields.forEach((id) => {
+      const elem = page.querySelector(`#${id}`);
+      current_config[id] = ssoConfigurationPage.serializeEnabledFolders(elem);
+    });
+
+    form_elements.role_map_fields.forEach((id) => {
+      const elem = page.querySelector(`#${id}`);
+      current_config[id] = ssoConfigurationPage.serializeRoleMappings(elem);
+    });
+
+    const downloadPermission = page.querySelector(
+      "#EnableContentDownloading",
+    ).value;
+    current_config.EnableContentDownloading =
+      downloadPermission === "" ? null : downloadPermission === "true";
+    config.OidConfigs[provider_name] = current_config;
+
+    const result = await ApiClient.updatePluginConfiguration(
+      ssoConfigurationPage.pluginUniqueId,
+      config,
+    );
+    Dashboard.processPluginConfigurationUpdateResult(result);
+    const persisted = await ApiClient.getPluginConfiguration(
+      ssoConfigurationPage.pluginUniqueId,
+    );
+    if (!persisted.OidConfigs[provider_name])
+      throw new Error("Provider save verification failed");
+    ssoConfigurationPage.populateProviders(page, persisted.OidConfigs);
+    await ssoConfigurationPage.loadProvider(page, provider_name);
+    page.querySelector("#selectProvider").value = provider_name;
+    Dashboard.alert("Settings saved.");
   },
   addTextAreaStyle: (view) => {
     var style = document.createElement("link");
@@ -406,7 +414,11 @@ export default function (view) {
   view.querySelector("#SaveProvider").addEventListener("click", (e) => {
     const target_provider = view.querySelector("#OidProviderName").value;
 
-    ssoConfigurationPage.saveProvider(view, target_provider);
+    ssoConfigurationPage.saveProvider(view, target_provider).catch(() => {
+      Dashboard.alert(
+        "Provider settings were not saved. Check the form and server logs.",
+      );
+    });
 
     e.preventDefault();
     return false;

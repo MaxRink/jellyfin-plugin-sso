@@ -15,6 +15,8 @@ using Duende.IdentityModel.OidcClient;
 using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
+using Jellyfin.Plugin.SSO_Auth.Api.Avatar;
+using Jellyfin.Plugin.SSO_Auth.Api.Saml;
 using Jellyfin.Plugin.SSO_Auth.Auth;
 using Jellyfin.Plugin.SSO_Auth.Config;
 using Jellyfin.Plugin.SSO_Auth.Helpers;
@@ -43,6 +45,7 @@ namespace Jellyfin.Plugin.SSO_Auth.Api;
 /// </summary>
 [ApiController]
 [Route("[controller]")]
+[ResponseCache(Location = ResponseCacheLocation.None, NoStore = true)]
 public class SSOController : ControllerBase
 {
     private const string SamlLinkStatePrefix = "link:";
@@ -59,7 +62,9 @@ public class SSOController : ControllerBase
     private static readonly TimeSpan AuthorizationStateLifetime = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan BackchannelTimeout = TimeSpan.FromSeconds(30);
     private static readonly ConcurrentDictionary<string, TimedAuthorizeState> StateManager = new();
+    private static readonly ConcurrentDictionary<string, TimedAuthorizeState> OidAuthStates = new();
     private static readonly ConcurrentDictionary<string, TimedSamlLinkState> SamlLinkStateManager = new();
+    private static readonly ConcurrentDictionary<string, (string Provider, string Response, DateTime Created)> SamlAuthStates = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SSOController"/> class.
@@ -142,19 +147,28 @@ public class SSOController : ControllerBase
                 return BadRequest("The authorization state belongs to a different provider.");
             }
 
-            if (timedState.IsLinking && !StateManager.TryRemove(state, out timedState))
+            if (!StateManager.TryRemove(state, out timedState))
             {
                 return BadRequest("Invalid or expired state");
             }
 
-            var scopes = config.OidScopes ?? Array.Empty<string>();
+            string clientSecret;
+            try
+            {
+                clientSecret = OidcClientSecret.Resolve(config);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+            {
+                return BadRequest("The configured client-secret source is unavailable or invalid.");
+            }
+
             var options = new OidcClientOptions
             {
                 Authority = config.OidEndpoint?.Trim(),
                 ClientId = config.OidClientId?.Trim(),
-                ClientSecret = config.OidSecret?.Trim(),
+                ClientSecret = clientSecret,
                 RedirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/OID/{(Request.Path.Value.Contains("/start/", StringComparison.InvariantCultureIgnoreCase) ? "redirect" : "r")}/" + provider,
-                Scope = string.Join(" ", scopes.Prepend("openid profile")),
+                Scope = OidcScopeBuilder.Build(config.OidScopes, config.OverrideDefaultScopes),
                 DisablePushedAuthorization = config.DisablePushedAuthorization,
                 TokenClientCredentialStyle = config.UseClientSecretBasic
                     ? ClientCredentialStyle.AuthorizationHeader
@@ -347,11 +361,11 @@ public class SSOController : ControllerBase
                 else
                 {
                     _logger.LogWarning(
-                        "OpenID user {Username} did not match any configured admin role {@AdminRoles}. RoleClaim={RoleClaim}. Claims seen: {@Claims}. Note: matching is case-sensitive and exact-string.",
+                        "OpenID user {Username} did not match any configured admin role {@AdminRoles}. RoleClaim={RoleClaim}. Claim types: {@Claims}. Note: matching is case-sensitive and exact-string.",
                         timedState.Username,
                         config.AdminRoles,
                         config.RoleClaim,
-                        result.User.Claims.Select(o => new { o.Type, o.Value }));
+                        result.User.Claims.Select(o => o.Type).Distinct());
                 }
             }
 
@@ -377,8 +391,9 @@ public class SSOController : ControllerBase
                     return Redirect(GetRequestBase(config.SchemeOverride, config.PortOverride) + "/SSOViews/linking");
                 }
 
-                _logger.LogInformation($"Is request linking: {isLinking}");
-                return Content(WebResponse.Generator(data: state, provider: provider, baseUrl: GetRequestBase(config.SchemeOverride, config.PortOverride), mode: "OID", quickConnectCode: timedState.QuickConnectCode, returnUrl: timedState.ReturnUrl), MediaTypeNames.Text.Html);
+                var handoff = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+                OidAuthStates[handoff] = timedState;
+                return Content(WebResponse.Generator(data: handoff, provider: provider, baseUrl: GetRequestBase(config.SchemeOverride, config.PortOverride), mode: "OID", quickConnectCode: timedState.QuickConnectCode, returnUrl: timedState.ReturnUrl), MediaTypeNames.Text.Html);
             }
             else
             {
@@ -431,6 +446,18 @@ public class SSOController : ControllerBase
     {
         if (segments.Length == 1)
         {
+            if (claim.Value.TrimStart().StartsWith('['))
+            {
+                try
+                {
+                    return JArray.Parse(claim.Value).Where(role => role.Type == JTokenType.String).Values<string>().ToList();
+                }
+                catch (JsonException)
+                {
+                    return new List<string>();
+                }
+            }
+
             // Providers such as Zitadel encode roles as the keys of a JSON object,
             // e.g. {"jellyfin_admin": {"org_id": "org_domain"}, "jellyfin_user": {...}}.
             if (claim.Value.TrimStart().StartsWith('{'))
@@ -481,7 +508,7 @@ public class SSOController : ControllerBase
 
         return rolesToken switch
         {
-            JArray rolesArray => rolesArray.ToObject<List<string>>() ?? new List<string>(),
+            JArray rolesArray => rolesArray.Where(role => role.Type == JTokenType.String).Values<string>().ToList(),
             JObject rolesObject => rolesObject.Properties().Select(p => p.Name).ToList(),
             _ => new List<string>(),
         };
@@ -567,15 +594,25 @@ public class SSOController : ControllerBase
                 }
             }
 
+            string clientSecret;
+            try
+            {
+                clientSecret = OidcClientSecret.Resolve(config);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+            {
+                return BadRequest("The configured client-secret source is unavailable or invalid.");
+            }
+
             string redirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/OID/{(newPath ? "redirect" : "r")}/" + provider;
 
             var options = new OidcClientOptions
             {
                 Authority = config.OidEndpoint?.Trim(),
                 ClientId = config.OidClientId?.Trim(),
-                ClientSecret = config.OidSecret?.Trim(),
+                ClientSecret = clientSecret,
                 RedirectUri = redirectUri,
-                Scope = string.Join(" ", (config.OidScopes ?? Array.Empty<string>()).Prepend("openid profile")),
+                Scope = OidcScopeBuilder.Build(config.OidScopes, config.OverrideDefaultScopes),
                 DisablePushedAuthorization = config.DisablePushedAuthorization,
                 TokenClientCredentialStyle = config.UseClientSecretBasic
                     ? ClientCredentialStyle.AuthorizationHeader
@@ -596,10 +633,20 @@ public class SSOController : ControllerBase
             var discoveryEndpoint = options.Authority?.TrimEnd('/') + "/.well-known/openid-configuration";
             _logger.LogInformation("Preparing OpenID login for provider {Provider} via {DiscoveryEndpoint}", provider, discoveryEndpoint);
 
+            Parameters authorizationParameters;
+            try
+            {
+                authorizationParameters = OidcAuthorizationParameterBuilder.Build(config.OidAuthorizationParameters);
+            }
+            catch (ArgumentException)
+            {
+                return ReturnError(StatusCodes.Status400BadRequest, "Invalid OIDC authorization parameter configuration.");
+            }
+
             AuthorizeState state;
             try
             {
-                state = await oidcClient.PrepareLoginAsync().ConfigureAwait(false);
+                state = await oidcClient.PrepareLoginAsync(authorizationParameters).ConfigureAwait(false);
             }
             catch (TaskCanceledException ex)
             {
@@ -663,6 +710,7 @@ public class SSOController : ControllerBase
     /// <param name="provider">Name of provider to delete.</param>
     [Authorize(Policy = Policies.RequiresElevation)]
     [HttpGet("OID/Del/{provider}")]
+    [HttpDelete("OID/Del/{provider}")]
     public void OidDel(string provider)
     {
         var configuration = SSOPlugin.Instance.Configuration;
@@ -704,7 +752,7 @@ public class SSOController : ControllerBase
     [HttpGet("SAML/GetNames")]
     public ActionResult SamlProviderNames()
     {
-        return Ok(SSOPlugin.Instance.Configuration.SamlConfigs.Keys);
+        return Ok(SSOPlugin.Instance.Configuration.SamlConfigs.Where(provider => provider.Value?.Enabled == true).Select(provider => provider.Key));
     }
 
     /// <summary>
@@ -715,7 +763,13 @@ public class SSOController : ControllerBase
     [HttpGet("OID/States")]
     public ActionResult OidStates()
     {
-        return Ok(StateManager);
+        return Ok(StateManager.Values.Select(state => new
+        {
+            state.Provider,
+            state.Created,
+            state.Valid,
+            state.IsLinking
+        }).ToArray());
     }
 
     /// <summary>
@@ -740,12 +794,12 @@ public class SSOController : ControllerBase
         }
 
         if (config.Enabled
-            && !string.IsNullOrEmpty(response.Data)
-            && StateManager.TryGetValue(response.Data, out var pendingState)
+            && !string.IsNullOrEmpty(response?.Data)
+            && OidAuthStates.TryGetValue(response.Data, out var pendingState)
             && pendingState.Valid
             && !IsAuthorizationStateExpired(pendingState.Created)
             && string.Equals(pendingState.Provider, provider, StringComparison.Ordinal)
-            && StateManager.TryRemove(response.Data, out var timedState))
+            && OidAuthStates.TryRemove(response.Data, out var timedState))
         {
             Guid? userId = await CreateCanonicalLinkAndUserIfNotExist("oid", provider, timedState.Id, timedState.Username);
             if (userId is null)
@@ -764,7 +818,10 @@ public class SSOController : ControllerBase
                 response,
                 config.DefaultProvider?.Trim(),
                 timedState.AvatarURL,
-                config.PreserveAdminPermissions)
+                config.PreserveAdminPermissions,
+                config.ApplyContentDownloadPermissionOnEveryLogin ? config.EnableContentDownloading : null,
+                config.PreserveUnmanagedFolders,
+                (config.EnabledFolders ?? Array.Empty<string>()).Concat((config.FolderRoleMapping ?? new List<FolderRoleMap>()).Where(map => map != null).SelectMany(map => map.Folders ?? new List<string>())))
                 .ConfigureAwait(false);
             return Ok(authenticationResult);
         }
@@ -799,7 +856,7 @@ public class SSOController : ControllerBase
             return BadRequest("Provider is not enabled");
         }
 
-        if (string.IsNullOrEmpty(request?.IdToken))
+        if (string.IsNullOrEmpty(request?.IdToken) || request.IdToken.Length > 64 * 1024)
         {
             return BadRequest("Missing id_token");
         }
@@ -817,9 +874,13 @@ public class SSOController : ControllerBase
             var jwksUri = discovery["jwks_uri"]?.ToString();
             var issuer = discovery["issuer"]?.ToString();
 
-            if (string.IsNullOrEmpty(jwksUri))
+            if (!Uri.TryCreate(config.OidEndpoint?.Trim(), UriKind.Absolute, out var authority)
+                || !Uri.TryCreate(jwksUri, UriKind.Absolute, out var keysUri)
+                || (keysUri.Scheme != Uri.UriSchemeHttps && !(config.DisableHttps && keysUri.Scheme == Uri.UriSchemeHttp))
+                || (!config.DoNotValidateIssuerName && !string.Equals(issuer, config.OidEndpoint?.Trim(), StringComparison.Ordinal))
+                || (!config.DoNotValidateEndpoints && !string.Equals(keysUri.GetLeftPart(UriPartial.Authority), authority.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase)))
             {
-                return Problem("Could not determine JWKS URI from provider discovery document");
+                return BadRequest("The discovery document's issuer or signing-key endpoint does not match the configured provider.");
             }
 
             // Fetch JWKS and build signing keys
@@ -834,6 +895,9 @@ public class SSOController : ControllerBase
                 ValidateIssuer = !config.DoNotValidateIssuerName,
                 ValidateAudience = true,
                 ValidateLifetime = true,
+                RequireSignedTokens = true,
+                ValidateIssuerSigningKey = true,
+                ValidAlgorithms = new[] { "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512" },
                 ClockSkew = TimeSpan.FromSeconds(30),
             };
 
@@ -1000,7 +1064,10 @@ public class SSOController : ControllerBase
                 authResponse,
                 config.DefaultProvider?.Trim(),
                 avatarUrl,
-                config.PreserveAdminPermissions)
+                config.PreserveAdminPermissions,
+                config.ApplyContentDownloadPermissionOnEveryLogin ? config.EnableContentDownloading : null,
+                config.PreserveUnmanagedFolders,
+                (config.EnabledFolders ?? Array.Empty<string>()).Concat((config.FolderRoleMapping ?? new List<FolderRoleMap>()).Where(map => map != null).SelectMany(map => map.Folders ?? new List<string>())))
                 .ConfigureAwait(false);
 
             return Ok(authenticationResult);
@@ -1023,7 +1090,7 @@ public class SSOController : ControllerBase
     /// <returns>A webpage that will complete the client-side flow.</returns>
     [HttpPost("SAML/p/{provider}")]
     [HttpPost("SAML/post/{provider}")]
-    public ActionResult SamlPost(string provider, [FromQuery] string relayState = null)
+    public async Task<ActionResult> SamlPost(string provider, [FromQuery] string relayState = null)
     {
         if (string.IsNullOrEmpty(relayState) && Request.HasFormContentType)
         {
@@ -1045,27 +1112,32 @@ public class SSOController : ControllerBase
             return BadRequest("Legacy unauthenticated linking transactions are no longer accepted.");
         }
 
-        TimedSamlLinkState samlLinkState = null;
-        bool isLinking = relayState?.StartsWith(SamlLinkStatePrefix, StringComparison.Ordinal) == true;
-        if (isLinking)
+        if (string.IsNullOrEmpty(relayState)
+            || !SamlLinkStateManager.TryRemove(relayState, out var samlLinkState)
+            || IsAuthorizationStateExpired(samlLinkState.Created)
+            || !string.Equals(samlLinkState.Provider, provider, StringComparison.Ordinal))
         {
-            if (!SamlLinkStateManager.TryRemove(relayState, out samlLinkState)
-                || IsAuthorizationStateExpired(samlLinkState.Created)
-                || !string.Equals(samlLinkState.Provider, provider, StringComparison.Ordinal))
-            {
-                return BadRequest("Invalid or expired SAML linking state.");
-            }
+            return BadRequest("Invalid or expired SAML request state. Start a new login from Jellyfin.");
         }
+
+        bool isLinking = samlLinkState.JellyfinUserId != Guid.Empty;
 
         _logger.LogInformation("SAML response received. Is linking: {IsLinking}", isLinking);
 
         if (config.Enabled)
         {
-            var samlResponse = new Response(config.SamlCertificate, Request.Form["SAMLResponse"]);
-
-            if (!samlResponse.IsValid())
+            if (!Request.HasFormContentType
+                || !SamlResponseLoader.TryParse(config.SamlCertificate, Request.Form["SAMLResponse"], out var parsedResponse))
             {
-                return Problem("Invalid SAML signature");
+                return BadRequest("Malformed SAML response.");
+            }
+
+            using var samlResponse = parsedResponse;
+            if (!samlResponse.IsValid(config.SamlClientId)
+                || !string.Equals(samlResponse.GetInResponseTo(), samlLinkState.RequestId, StringComparison.Ordinal)
+                || !string.Equals(samlResponse.GetRecipient(), samlLinkState.Recipient, StringComparison.Ordinal))
+            {
+                return BadRequest("Invalid SAML signature, audience, validity window or request binding.");
             }
 
             string providerUserId = samlResponse.GetNameID();
@@ -1074,15 +1146,10 @@ public class SSOController : ControllerBase
                 return BadRequest("The SAML provider did not return a usable NameID.");
             }
 
-            if (isLinking && !samlResponse.IsResponseTo(samlLinkState.RequestId, samlLinkState.Recipient))
-            {
-                return BadRequest("The SAML response does not match the linking request.");
-            }
-
             bool valid = false;
 
             // If no roles are configured, don't use RBAC
-            if (config.Roles.Length == 0)
+            if (config.Roles == null || config.Roles.Length == 0)
             {
                 valid = true;
             }
@@ -1090,7 +1157,7 @@ public class SSOController : ControllerBase
             // Check if user is allowed to log in based on roles
             foreach (string role in samlResponse.GetCustomAttributes("Role"))
             {
-                foreach (string allowedRole in config.Roles)
+                foreach (string allowedRole in config.Roles ?? Array.Empty<string>())
                 {
                     if (allowedRole.Equals(role))
                     {
@@ -1109,12 +1176,16 @@ public class SSOController : ControllerBase
                         return linkResult;
                     }
 
+                    await EnforceSsoOnlyForLinkedUser(samlLinkState.JellyfinUserId).ConfigureAwait(false);
                     return Redirect(GetRequestBase(config.SchemeOverride, config.PortOverride) + "/SSOViews/linking");
                 }
 
+                var handoff = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+                SamlAuthStates[handoff] = (provider, Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(samlResponse.Xml)), DateTime.UtcNow);
+
                 return Content(
                         WebResponse.Generator(
-                            data: Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(samlResponse.Xml)),
+                            data: handoff,
                             provider: provider,
                             baseUrl: GetRequestBase(config.SchemeOverride, config.PortOverride),
                             mode: "SAML"),
@@ -1122,10 +1193,7 @@ public class SSOController : ControllerBase
             }
 
             _logger.LogWarning(
-                "SAML user: {UserId} has insufficient roles: {@Roles}. Expected any one of: {@ExpectedRoles}",
-                providerUserId,
-                samlResponse.GetCustomAttributes("Role"),
-                config.Roles);
+                "SAML login denied by the role allow-list for provider {Provider}", provider);
             return ReturnError(StatusCodes.Status401Unauthorized, "Error. Check permissions.");
         }
 
@@ -1203,26 +1271,17 @@ public class SSOController : ControllerBase
                 config.SamlClientId.Trim(),
                 redirectUri);
 
-            string relayState = null;
-            if (isLinking)
+            if (isLinking && !linkingUserId.HasValue)
             {
-                if (!linkingUserId.HasValue)
-                {
-                    return BadRequest("The linking transaction is not associated with a Jellyfin user.");
-                }
+                return BadRequest("The linking transaction is not associated with a Jellyfin user.");
+            }
 
-                relayState = SamlLinkStatePrefix + Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-                var samlLinkState = new TimedSamlLinkState(
-                    linkingUserId.Value,
-                    provider,
-                    request.Id,
-                    redirectUri,
-                    DateTime.UtcNow);
-
-                if (!SamlLinkStateManager.TryAdd(relayState, samlLinkState))
-                {
-                    return StatusCode(StatusCodes.Status409Conflict, "A SAML linking flow with the same state already exists.");
-                }
+            string relayState = SamlLinkStatePrefix + Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+            var samlLinkState = new TimedSamlLinkState(
+                linkingUserId ?? Guid.Empty, provider, request.Id, redirectUri, DateTime.UtcNow);
+            if (!SamlLinkStateManager.TryAdd(relayState, samlLinkState))
+            {
+                return Conflict("A SAML request with the same state already exists.");
             }
 
             string startUrl = request.GetRedirectUrl(config.SamlEndpoint.Trim(), relayState);
@@ -1260,6 +1319,7 @@ public class SSOController : ControllerBase
     /// <returns>The success result.</returns>
     [Authorize(Policy = Policies.RequiresElevation)]
     [HttpGet("SAML/Del/{provider}")]
+    [HttpDelete("SAML/Del/{provider}")]
     public OkResult SamlDel(string provider)
     {
         var configuration = SSOPlugin.Instance.Configuration;
@@ -1305,11 +1365,21 @@ public class SSOController : ControllerBase
             bool isAdmin = false;
             bool liveTv = config.EnableLiveTv;
             bool liveTvManagement = config.EnableLiveTvManagement;
-            var samlResponse = new Response(config.SamlCertificate, response.Data);
-
-            if (!samlResponse.IsValid())
+            if (string.IsNullOrEmpty(response?.Data)
+                || !SamlAuthStates.TryRemove(response.Data, out var handoff)
+                || !string.Equals(handoff.Provider, provider, StringComparison.Ordinal)
+                || IsAuthorizationStateExpired(handoff.Created)
+                || !SamlResponseLoader.TryParse(config.SamlCertificate, handoff.Response, out var parsedResponse))
             {
-                return Problem("Invalid SAML signature");
+                return BadRequest("Invalid or expired SAML authorization state.");
+            }
+
+            using var samlResponse = parsedResponse;
+            if (!samlResponse.IsValid(config.SamlClientId)
+                || string.IsNullOrWhiteSpace(samlResponse.GetNameID())
+                || ((config.Roles?.Length ?? 0) > 0 && !samlResponse.GetCustomAttributes("Role").Intersect(config.Roles).Any()))
+            {
+                return BadRequest("Invalid SAML response or insufficient roles.");
             }
 
             HashSet<string> folders;
@@ -1392,7 +1462,10 @@ public class SSOController : ControllerBase
                 response,
                 config.DefaultProvider?.Trim(),
                 null,
-                config.PreserveAdminPermissions)
+                config.PreserveAdminPermissions,
+                config.ApplyContentDownloadPermissionOnEveryLogin ? config.EnableContentDownloading : null,
+                config.PreserveUnmanagedFolders,
+                (config.EnabledFolders ?? Array.Empty<string>()).Concat((config.FolderRoleMapping ?? new List<FolderRoleMap>()).Where(map => map != null).SelectMany(map => map.Folders ?? new List<string>())))
                 .ConfigureAwait(false);
             return Ok(authenticationResult);
         }
@@ -1463,6 +1536,7 @@ public class SSOController : ControllerBase
         var settings = GetProvisioningSettings(mode, provider);
         canonicalName = ResolveMappedUsername(mode, provider, canonicalName);
         User user = null;
+        string legacyUsernameKey = null;
 
         // First try to get the user by its id in case it was already registered before
         Guid userId = Guid.Empty;
@@ -1494,7 +1568,7 @@ public class SSOController : ControllerBase
         }
 
         // Releases before 6.0 keyed links by username. Honour such a link so nobody loses
-        // their account on upgrade; MigrateLegacyUsernameLink rekeys it below.
+        // their account on upgrade; the consumed legacy key is migrated below.
         if (user == null && !string.Equals(canonicalId, canonicalName, StringComparison.Ordinal))
         {
             var legacyLinks = GetCanonicalLinks(mode, provider);
@@ -1502,6 +1576,10 @@ public class SSOController : ControllerBase
             if (legacyKey is not null)
             {
                 user = _userManager.GetUserById(legacyLinks[legacyKey]);
+                if (user != null)
+                {
+                    legacyUsernameKey = legacyKey;
+                }
             }
         }
 
@@ -1543,8 +1621,7 @@ public class SSOController : ControllerBase
                 ? GetType().FullName
                 : settings.DefaultProvider.Trim();
             // https://jonathancrozier.com/blog/how-to-generate-a-cryptographically-secure-random-string-in-dot-net-with-c-sharp
-            user.Password = _cryptoProvider.CreatePasswordHash(Convert.ToBase64String(RandomNumberGenerator.GetBytes(64))).ToString();
-            await _userManager.UpdateUserAsync(user).ConfigureAwait(false);
+            await PasswordlessAccountSealer.SealNewAccountAsync(user, _userManager, _cryptoProvider, _logger).ConfigureAwait(false);
 
             if (settings.EnableAuthorization)
             {
@@ -1556,6 +1633,11 @@ public class SSOController : ControllerBase
                 var newUserPolicy = _userManager.GetUserDto(user).Policy;
                 newUserPolicy.EnableAllFolders = false;
                 newUserPolicy.EnabledFolders = Array.Empty<Guid>();
+                if (settings.EnableContentDownloading.HasValue)
+                {
+                    newUserPolicy.EnableContentDownloading = settings.EnableContentDownloading.Value;
+                }
+
                 await _userManager.UpdatePolicyAsync(user.Id, newUserPolicy).ConfigureAwait(false);
                 user = _userManager.GetUserById(user.Id);
             }
@@ -1583,79 +1665,29 @@ public class SSOController : ControllerBase
             CreateCanonicalLink(mode, provider, userId, canonicalId);
         }
 
-        MigrateLegacyUsernameLink(mode, provider, canonicalId, user);
+        if (legacyUsernameKey != null && !string.Equals(legacyUsernameKey, canonicalId, StringComparison.Ordinal))
+        {
+            var links = GetCanonicalLinks(mode, provider);
+            links.Remove(legacyUsernameKey);
+            UpdateCanonicalLinkConfig(links, mode, provider);
+        }
 
         return userId;
     }
 
-    /// <summary>
-    /// Loads an avatar either from an inline data: URL or by downloading it.
-    /// </summary>
-    /// <param name="avatarUrl">The avatar URL from the provider.</param>
-    /// <returns>The image bytes and their content type.</returns>
-    private async Task<(MemoryStream Stream, string ContentType)> LoadAvatar(string avatarUrl)
-    {
-        if (avatarUrl.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
-        {
-            // Providers such as Kanidm and Pocket ID hand the picture out inline.
-            var base64Data = avatarUrl.Substring(avatarUrl.IndexOf(',', StringComparison.Ordinal) + 1);
-            var contentType = avatarUrl.Substring(5, avatarUrl.IndexOf(';', StringComparison.Ordinal) - 5);
-            return (new MemoryStream(Convert.FromBase64String(base64Data)), contentType);
-        }
-
-        using var client = CreatePluginHttpClient();
-
-        using var avatarResponse = await client.GetAsync(avatarUrl).ConfigureAwait(false);
-
-        if (!avatarResponse.Content.Headers.TryGetValues("content-type", out var contentTypeList))
-        {
-            throw new Exception("Cannot get Content-Type of image : " + avatarUrl);
-        }
-
-        var downloadedContentType = contentTypeList.First();
-        if (!downloadedContentType.StartsWith("image", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new Exception("Content type of avatar URL is not an image, got :  " + downloadedContentType);
-        }
-
-        return (new MemoryStream(await avatarResponse.Content.ReadAsByteArrayAsync().ConfigureAwait(false)), downloadedContentType);
-    }
-
-    private static (bool EnableAuthorization, string DefaultProvider, bool DisableUsernameAccountAdoption) GetProvisioningSettings(string mode, string provider)
+    private static (bool EnableAuthorization, string DefaultProvider, bool DisableUsernameAccountAdoption, bool? EnableContentDownloading) GetProvisioningSettings(string mode, string provider)
     {
         switch (mode)
         {
             case "oid":
                 var oid = SSOPlugin.Instance.Configuration.OidConfigs[provider];
-                return (oid.EnableAuthorization, oid.DefaultProvider, oid.DisableUsernameAccountAdoption);
+                return (oid.EnableAuthorization, oid.DefaultProvider, oid.DisableUsernameAccountAdoption, oid.EnableContentDownloading);
             case "saml":
                 var saml = SSOPlugin.Instance.Configuration.SamlConfigs[provider];
-                return (saml.EnableAuthorization, saml.DefaultProvider, saml.DisableUsernameAccountAdoption);
+                return (saml.EnableAuthorization, saml.DefaultProvider, saml.DisableUsernameAccountAdoption, saml.EnableContentDownloading);
             default:
                 throw new ArgumentException($"{mode} is not a valid choice between 'saml' and 'oid'");
         }
-    }
-
-    private void MigrateLegacyUsernameLink(string mode, string provider, string canonicalId, User user)
-    {
-        var links = GetCanonicalLinks(mode, provider);
-        var legacyKeys = links
-            .Where(link => link.Value == user.Id && !string.Equals(link.Key, canonicalId, StringComparison.Ordinal))
-            .Select(link => link.Key)
-            .ToList();
-
-        if (legacyKeys.Count == 0)
-        {
-            return;
-        }
-
-        foreach (var legacyKey in legacyKeys)
-        {
-            _logger.LogInformation("Removing legacy username-keyed SSO link {LegacyKey} for user {UserId}", legacyKey, user.Id);
-            links.Remove(legacyKey);
-        }
-
-        UpdateCanonicalLinkConfig(links, mode, provider);
     }
 
     private Guid GetCanonicalLink(string mode, string provider, string canonicalId)
@@ -1807,26 +1839,7 @@ public class SSOController : ControllerBase
     [Produces(MediaTypeNames.Application.Json)]
     private ActionResult SamlLink(string provider, Guid jellyfinUserId, AuthResponse response)
     {
-        SamlConfig config;
-        try
-        {
-            config = SSOPlugin.Instance.Configuration.SamlConfigs[provider];
-        }
-        catch (KeyNotFoundException)
-        {
-            return BadRequest("No matching provider found");
-        }
-
-        var samlResponse = new Response(config.SamlCertificate, response.Data);
-
-        if (!samlResponse.IsValid())
-        {
-            return Problem("Invalid SAML signature");
-        }
-
-        string providerUserId = samlResponse.GetNameID();
-
-        return CreateCanonicalLink("saml", provider, jellyfinUserId, providerUserId);
+        return BadRequest("Start SAML linking through the authenticated StartLink endpoint.");
     }
 
     /// <summary>
@@ -1840,26 +1853,7 @@ public class SSOController : ControllerBase
     [Produces(MediaTypeNames.Application.Json)]
     private ActionResult OidLink(string provider, Guid jellyfinUserId, AuthResponse response)
     {
-        OidConfig config;
-        try
-        {
-            config = SSOPlugin.Instance.Configuration.OidConfigs[provider];
-        }
-        catch (KeyNotFoundException)
-        {
-            return BadRequest("No matching provider found");
-        }
-
-        if (!string.IsNullOrEmpty(response.Data)
-            && StateManager.TryGetValue(response.Data, out var timedState)
-            && timedState.Valid
-            && !IsAuthorizationStateExpired(timedState.Created)
-            && string.Equals(timedState.Provider, provider, StringComparison.Ordinal))
-        {
-            return CreateCanonicalLink("oid", provider, jellyfinUserId, timedState.Id);
-        }
-
-        return BadRequest("Invalid or expired authorization state.");
+        return BadRequest("Start OpenID linking through the authenticated StartLink endpoint.");
     }
 
     private ActionResult CreateCanonicalLink(string mode, string provider, [FromRoute] Guid jellyfinUserId, string providerUserId)
@@ -1925,7 +1919,10 @@ public class SSOController : ControllerBase
     /// <param name="defaultProvider">The default provider of the user to be set after logging in.</param>
     /// <param name="avatarUrl">The new avatar url for the user.</param>
     /// <param name="preserveAdmin">When true, never demote an existing admin; only ever elevate.</param>
-    private async Task<AuthenticationResult> Authenticate(Guid userId, bool isAdmin, bool enableAuthorization, bool enableAllFolders, string[] enabledFolders, bool enableLiveTv, bool enableLiveTvAdmin, AuthResponse authResponse, string defaultProvider, string avatarUrl, bool preserveAdmin)
+    /// <param name="enableContentDownloading">Optional download permission to apply when authorization is managed.</param>
+    /// <param name="preserveUnmanagedFolders">Whether to preserve library grants outside the provider's mappings.</param>
+    /// <param name="managedFolders">Every library managed by the provider.</param>
+    private async Task<AuthenticationResult> Authenticate(Guid userId, bool isAdmin, bool enableAuthorization, bool enableAllFolders, string[] enabledFolders, bool enableLiveTv, bool enableLiveTvAdmin, AuthResponse authResponse, string defaultProvider, string avatarUrl, bool preserveAdmin, bool? enableContentDownloading = null, bool preserveUnmanagedFolders = false, IEnumerable<string> managedFolders = null)
     {
         User user = _userManager.GetUserById(userId);
 
@@ -1978,12 +1975,23 @@ public class SSOController : ControllerBase
                     }
                 }
 
-                policy.EnabledFolders = folderIds.ToArray();
+                if (preserveUnmanagedFolders)
+                {
+                    var managedIds = (managedFolders ?? Array.Empty<string>())
+                        .Select(folder => Guid.TryParse(folder, out var id) ? id : Guid.Empty).ToHashSet();
+                    folderIds.AddRange((policy.EnabledFolders ?? Array.Empty<Guid>()).Where(id => !managedIds.Contains(id)));
+                }
+
+                policy.EnabledFolders = folderIds.Distinct().ToArray();
+            }
+
+            policy.EnableLiveTvAccess = enableLiveTv;
+            policy.EnableLiveTvManagement = enableLiveTvAdmin;
+            if (enableContentDownloading.HasValue)
+            {
+                policy.EnableContentDownloading = enableContentDownloading.Value;
             }
         }
-
-        policy.EnableLiveTvAccess = enableLiveTv;
-        policy.EnableLiveTvManagement = enableLiveTvAdmin;
 
         // Only migrate accounts this plugin owns: reassigning unconditionally would hijack
         // pre-existing users (e.g. a local break-glass admin, or LDAP-managed accounts) on
@@ -2000,14 +2008,19 @@ public class SSOController : ControllerBase
         // UpdatePolicyAsync replaced the cached user entity.
         user = _userManager.GetUserById(userId);
 
+        if (await PasswordlessAccountSealer.SealAsync(user, _userManager, _cryptoProvider).ConfigureAwait(false))
+        {
+            SsoAudit.PasswordlessAccountSealedAtLogin(_logger);
+        }
+
         if (avatarUrl is not null)
         {
             try
             {
-                var avatar = await LoadAvatar(avatarUrl).ConfigureAwait(false);
+                var avatar = await AvatarDownload.LoadAsync(avatarUrl).ConfigureAwait(false);
                 using var stream = avatar.Stream;
                 var contentType = avatar.ContentType;
-                var extension = contentType.Split("/").Last();
+                AvatarContentType.TryResolveExtension(contentType, out var extension);
 
                 if (user != null)
                 {
@@ -2029,7 +2042,7 @@ public class SSOController : ControllerBase
             }
             catch (Exception e)
             {
-                _logger.LogError(e, "Failed to set the profile image from {AvatarUrl}", avatarUrl);
+                _logger.LogWarning("Failed to update the profile image: {ErrorType}", e.GetType().Name);
             }
         }
 
@@ -2040,6 +2053,7 @@ public class SSOController : ControllerBase
         authRequest.AppVersion = authResponse.AppVersion;
         authRequest.DeviceId = authResponse.DeviceID;
         authRequest.DeviceName = authResponse.DeviceName;
+        authRequest.RemoteEndPoint = HttpContext.Connection.RemoteIpAddress?.ToString();
         _logger.LogInformation("Auth request created...");
 
         return await _sessionManager.AuthenticateDirect(authRequest).ConfigureAwait(false);
@@ -2226,6 +2240,7 @@ public class SSOController : ControllerBase
         var user = _userManager.GetUserById(jellyfinUserId);
         if (user is not null)
         {
+            await PasswordlessAccountSealer.SealAsync(user, _userManager, _cryptoProvider).ConfigureAwait(false);
             await SsoOnlyEnforcer.EnforceAsync(_userManager, _logger, user).ConfigureAwait(false);
         }
     }
@@ -2269,6 +2284,22 @@ public class SSOController : ControllerBase
             if (IsAuthorizationStateExpired(kvp.Value.Created))
             {
                 StateManager.TryRemove(kvp.Key, out _);
+            }
+        }
+
+        foreach (var kvp in OidAuthStates)
+        {
+            if (IsAuthorizationStateExpired(kvp.Value.Created))
+            {
+                OidAuthStates.TryRemove(kvp.Key, out _);
+            }
+        }
+
+        foreach (var kvp in SamlAuthStates)
+        {
+            if (IsAuthorizationStateExpired(kvp.Value.Created))
+            {
+                SamlAuthStates.TryRemove(kvp.Key, out _);
             }
         }
 
