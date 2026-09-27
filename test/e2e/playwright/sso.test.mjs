@@ -96,7 +96,7 @@ try {
     if (saved.deviceId !== 'sso-e2e-native-device') throw new Error('native device id was not retained');
     if (!saved.credentials.Servers.some(entry => entry.Id === 'other-server' && entry.AccessToken === 'other-token')) throw new Error('another server credential was overwritten');
   } else {
-    log('SUCCESS: credentials were stored (confirmed by waitForFunction); details read raced with navigation.');
+    throw new Error('could not read credentials to verify device identity and other-server preservation');
   }
 
   // Self-service linking page: must authenticate against Jellyfin 12 (Authorization

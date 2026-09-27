@@ -1032,9 +1032,9 @@ public class SSOController : ControllerBase
             if (!valid)
             {
                 _logger.LogWarning(
-                    "Device auth user {Username} has insufficient roles. Claims: {@Claims}. Expected any of: {@ExpectedRoles}",
+                    "Device auth user {Username} has insufficient roles. Claim types: {@Claims}. Expected any of: {@ExpectedRoles}",
                     username,
-                    claims.Select(c => new { c.Type, c.Value }),
+                    claims.Select(c => c.Type).Distinct(),
                     config.Roles);
                 return StatusCode(StatusCodes.Status401Unauthorized, "Error. Check permissions.");
             }
