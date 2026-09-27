@@ -3,6 +3,8 @@
 
 #nullable enable
 
+using Microsoft.IdentityModel.Tokens;
+
 namespace Jellyfin.Plugin.SSO_Auth.Api.Crypto;
 
 /// <summary>
@@ -24,6 +26,15 @@ internal static class SigningKeyStrength
     /// <param name="keySizeBits">The RSA key size in bits.</param>
     /// <returns><see langword="true"/> when the key is at least <see cref="MinimumRsaKeyBits"/> bits.</returns>
     internal static bool IsAcceptableRsaKeySize(int keySizeBits) => keySizeBits >= MinimumRsaKeyBits;
+
+    /// <summary>Whether an IdentityModel signing key meets the same policy used for SAML certificates.</summary>
+    internal static bool IsAcceptableSigningKey(SecurityKey key) => key switch
+    {
+        RsaSecurityKey rsa when rsa.Rsa is not null => IsAcceptableRsaKeySize(rsa.Rsa.KeySize),
+        ECDsaSecurityKey ecdsa when ecdsa.ECDsa is not null =>
+            IsApprovedEcCurveOid(ecdsa.ECDsa.ExportParameters(false).Curve.Oid?.Value),
+        _ => false,
+    };
 
     /// <summary>
     /// Whether an elliptic-curve public key's curve OID is one of the approved NIST P-curves (P-256, P-384,

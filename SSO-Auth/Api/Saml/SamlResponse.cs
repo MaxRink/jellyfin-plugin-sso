@@ -79,8 +79,16 @@ internal sealed class SamlResponse : IDisposable
         // (bad body). The XML is loaded here, at construction, and the fields are readonly: a validated
         // response object can never have different XML swapped into it afterwards (#396).
         _certificates = LoadCandidateCertificates(certificateStr, secondaryCertificateStr);
-        _xmlDoc = ParseResponseXml(responseString);
-        _xmlNameSpaceManager = GetNamespaceManager(); // lets construct a "manager" for XPath queries
+        try
+        {
+            _xmlDoc = ParseResponseXml(responseString);
+            _xmlNameSpaceManager = GetNamespaceManager(); // lets construct a "manager" for XPath queries
+        }
+        catch
+        {
+            Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -115,17 +123,24 @@ internal sealed class SamlResponse : IDisposable
     // paths reject it up front via SamlCertificate.IsInvalid).
     private static List<X509Certificate2> LoadCandidateCertificates(string certificateStr, string? secondaryCertificateStr)
     {
-        var certificates = new List<X509Certificate2>
+        var certificates = new List<X509Certificate2>();
+        try
         {
-            X509CertificateLoader.LoadCertificate(Convert.FromBase64String(certificateStr)),
-        };
-
-        if (!string.IsNullOrWhiteSpace(secondaryCertificateStr))
-        {
-            certificates.Add(X509CertificateLoader.LoadCertificate(Convert.FromBase64String(secondaryCertificateStr)));
+            certificates.Add(X509CertificateLoader.LoadCertificate(Convert.FromBase64String(certificateStr)));
+            if (!string.IsNullOrWhiteSpace(secondaryCertificateStr))
+            {
+                certificates.Add(X509CertificateLoader.LoadCertificate(Convert.FromBase64String(secondaryCertificateStr)));
+            }
+            return certificates;
         }
-
-        return certificates;
+        catch
+        {
+            foreach (var certificate in certificates)
+            {
+                certificate.Dispose();
+            }
+            throw;
+        }
     }
 
     // Parses the untrusted, Base64-encoded SAML response into a hardened XmlDocument. The body base64

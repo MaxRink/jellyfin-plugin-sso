@@ -1,13 +1,16 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using Duende.IdentityModel.OidcClient;
 using Jellyfin.Plugin.SSO_Auth;
 using Jellyfin.Plugin.SSO_Auth.Api;
+using Jellyfin.Plugin.SSO_Auth.Api.Crypto;
 using Jellyfin.Plugin.SSO_Auth.Config;
 using Jellyfin.Plugin.SSO_Auth.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Newtonsoft.Json;
@@ -16,6 +19,25 @@ namespace SSO_Auth.Tests;
 
 public partial class OidDeviceAuthTests
 {
+    [Fact]
+    public void OidcSigningKeyPolicyRejectsWeakRsaKeys()
+    {
+        using var weakRsa = RSA.Create(1024);
+        using var strongRsa = RSA.Create(SigningKeyStrength.MinimumRsaKeyBits);
+
+        Assert.False(SigningKeyStrength.IsAcceptableSigningKey(new RsaSecurityKey(weakRsa)));
+        Assert.True(SigningKeyStrength.IsAcceptableSigningKey(new RsaSecurityKey(strongRsa)));
+    }
+
+    [Fact]
+    public void SamlAddRejectsInvalidSigningCertificate()
+    {
+        var result = _controller.SamlAdd("invalid-certificate", new SamlConfig { SamlCertificate = "QUJD" });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.DoesNotContain("invalid-certificate", SSOPlugin.Instance.Configuration.SamlConfigs.Keys);
+    }
+
     [Fact]
     public async Task PasswordlessRepairPreservesRoutingAndExistingPasswords()
     {

@@ -16,6 +16,7 @@ using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.SSO_Auth.Api.Avatar;
+using Jellyfin.Plugin.SSO_Auth.Api.Crypto;
 using Jellyfin.Plugin.SSO_Auth.Api.Saml;
 using Jellyfin.Plugin.SSO_Auth.Auth;
 using Jellyfin.Plugin.SSO_Auth.Config;
@@ -34,6 +35,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -887,11 +889,11 @@ public class SSOController : ControllerBase
             var jwksJson = await httpClient.GetStringAsync(jwksUri).ConfigureAwait(false);
             var jwks = new Microsoft.IdentityModel.Tokens.JsonWebKeySet(jwksJson);
 
-            var validationParams = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+            var validationParams = new TokenValidationParameters
             {
                 ValidIssuer = issuer,
                 ValidAudience = config.OidClientId?.Trim(),
-                IssuerSigningKeys = jwks.GetSigningKeys(),
+                IssuerSigningKeys = jwks.GetSigningKeys().Where(SigningKeyStrength.IsAcceptableSigningKey).ToArray(),
                 ValidateIssuer = !config.DoNotValidateIssuerName,
                 ValidateAudience = true,
                 ValidateLifetime = true,
@@ -1304,8 +1306,13 @@ public class SSOController : ControllerBase
     /// <returns>The success result.</returns>
     [Authorize(Policy = Policies.RequiresElevation)]
     [HttpPost("SAML/Add/{provider}")]
-    public OkResult SamlAdd(string provider, [FromBody] SamlConfig newConfig)
+    public ActionResult SamlAdd(string provider, [FromBody] SamlConfig newConfig)
     {
+        if (SamlCertificate.IsInvalid(newConfig.SamlCertificate))
+        {
+            return BadRequest("The SAML signing certificate is invalid or does not meet the minimum key-strength policy.");
+        }
+
         var configuration = SSOPlugin.Instance.Configuration;
         configuration.SamlConfigs[provider] = newConfig;
         SSOPlugin.Instance.UpdateConfiguration(configuration);
