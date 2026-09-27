@@ -60,6 +60,8 @@ No code was copied from the five repositories without a root license in the capt
 
 The .NET build treats warnings as errors. The test suite includes cryptographically signed SAML fixtures, malformed input, reference/algorithm/time/audience rejection, address classification, role handling, password repair/rollback, secret sources, policy management and single-use handoffs. The real Jellyfin/authentik browser harness additionally checks native device identity, preservation of another server's credentials, provisioning and self-service linking. The direct/transitive NuGet vulnerability audit reported no vulnerable packages at the time of the review.
 
+Validation on `1df1550592c34f2d64446dff67411661c5d3132f`: 356 tests passed, none skipped; the warning-clean build, release publish and full Prettier check passed. [GitHub Actions browser run](https://github.com/MaxRink/jellyfin-plugin-sso/actions/runs/36288540831) completed the real authentik/Jellyfin login, native device ID, other-server credential preservation, provisioning and linking checks successfully.
+
 ## Upgrade behavior
 
 SAML logins must start at Jellyfin's Start endpoint. Unsolicited responses and raw-assertion calls to Auth/Link are rejected. Identity providers need a current signing certificate, a supported strong signature, a valid expiry, the configured SP audience, and request/recipient correlation. The browser handoff still calls the same Auth route, but sends an opaque single-use value. OIDC handoff values are also distinct from callback states.
