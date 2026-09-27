@@ -32,7 +32,7 @@ internal static class SigningKeyStrength
     /// <returns><see langword="true"/> when the key meets the minimum signing-key policy.</returns>
     internal static bool IsAcceptableSigningKey(SecurityKey key) => key switch
     {
-        RsaSecurityKey rsa when rsa.Rsa is not null => IsAcceptableRsaKeySize(rsa.Rsa.KeySize),
+        RsaSecurityKey rsa => IsAcceptableRsaKeySize(rsa.KeySize),
         ECDsaSecurityKey ecdsa when ecdsa.ECDsa is not null =>
             IsApprovedEcCurveOid(ecdsa.ECDsa.ExportParameters(false).Curve.Oid?.Value),
         _ => false,
