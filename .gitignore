@@ -449,3 +449,5 @@ $RECYCLE.BIN/
 ##
 .vscode/*
 .vscode
+
+/test/e2e/migration-state/

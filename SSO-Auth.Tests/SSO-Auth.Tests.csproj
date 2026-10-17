@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SSO-Auth\SSO-Auth.csproj" />
+    <ProjectReference Include="../tools/SSO-Migration/SSO-Migration.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>
