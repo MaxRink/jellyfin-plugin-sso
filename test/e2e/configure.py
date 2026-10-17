@@ -59,7 +59,6 @@ def lookup(path):
 
 def wait_ready():
     print("waiting for authentik and jellyfin...")
-    ok_health = False
     for _ in range(120):
         s1, _ = req("GET", AK + "/-/health/ready/")
         s2, info = req("GET", JF + "/System/Info/Public")
@@ -75,12 +74,21 @@ def wait_ready():
 
 def configure_authentik():
     print("== authentik ==")
-    authz = lookup("/api/v3/flows/instances/?slug=default-provider-authorization-implicit-consent")
-    invalidation = lookup("/api/v3/flows/instances/?slug=default-provider-invalidation-flow")
-    authn = lookup("/api/v3/flows/instances/?slug=default-authentication-flow")
-    signing = lookup("/api/v3/crypto/certificatekeypairs/?has_key=true")
-    st, d = ak("GET", "/api/v3/propertymappings/provider/scope/")
-    scopes = {m["scope_name"]: m["pk"] for m in d["results"]}
+    # Blueprints are installed asynchronously after health and the bootstrap
+    # token become ready. Do not create a provider with null flow/key IDs.
+    for _ in range(60):
+        authz = lookup("/api/v3/flows/instances/?slug=default-provider-authorization-implicit-consent")
+        invalidation = lookup("/api/v3/flows/instances/?slug=default-provider-invalidation-flow")
+        authn = lookup("/api/v3/flows/instances/?slug=default-authentication-flow")
+        signing = lookup("/api/v3/crypto/certificatekeypairs/?has_key=true")
+        st, d = ak("GET", "/api/v3/propertymappings/provider/scope/")
+        assert st == 200, f"scope lookup -> {st}"
+        scopes = {m["scope_name"]: m["pk"] for m in d["results"]}
+        if all((authz, invalidation, authn, signing)) and {"openid", "email", "profile"} <= scopes.keys():
+            break
+        time.sleep(5)
+    else:
+        raise SystemExit("authentik default flows, signing key and scopes did not become ready")
     scope_pks = [scopes["openid"], scopes["email"], scopes["profile"]]
 
     redirect = f"http://{JF_INTERNAL_HOST}/sso/OID/redirect/{PROVIDER_SLUG}"
@@ -102,7 +110,8 @@ def configure_authentik():
     st, d = ak("GET", "/api/v3/providers/oauth2/?name=jellyfin")
     if d["results"]:
         pk = d["results"][0]["pk"]
-        ak("PATCH", f"/api/v3/providers/oauth2/{pk}/", provider)
+        st, d = ak("PATCH", f"/api/v3/providers/oauth2/{pk}/", provider)
+        assert st == 200, f"update provider -> {st} {d}"
         print(f"  provider updated pk={pk}")
     else:
         st, d = ak("POST", "/api/v3/providers/oauth2/", provider)

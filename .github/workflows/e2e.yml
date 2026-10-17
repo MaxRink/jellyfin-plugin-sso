@@ -6,7 +6,6 @@ name: E2E SSO Login
 
 on:
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:

@@ -431,9 +431,15 @@ If you wish to use releases from your own fork, refer to
 manifest file, `https://raw.githubusercontent.com/MaxRink/jellyfin-plugin-sso/manifest-release/manifest.json`
 so that it refers to your fork.
 
+## September 2026 fork consolidation
+
+The [fork review and license record](docs/audit/fork-review-2026-09-27.md) covers the compatibility ports and changes that require a separate migration. SAML now requires a login initiated from Jellyfin and consumes a one-time handoff; configure a current certificate, strong signatures, the correct audience and request correlation. Linked accounts with no password are repaired. Avatar downloads accept bounded raster images from public endpoints; inline raster images remain supported.
+
+New provider options are opt-in: `OverrideDefaultScopes`, `OidAuthorizationParameters` (a JSON object such as `{"prompt":"select_account"}`), `OidSecretFile` or `OidSecretEnvironmentVariable`, nullable `EnableContentDownloading` plus `ApplyContentDownloadPermissionOnEveryLogin`, and `PreserveUnmanagedFolders`. The last option keeps manual folder grants that appear nowhere in the provider's static folders or role mappings; removing a folder from all mappings makes it unmanaged. Download and folder controls apply only when authorization is enabled. Both SAML and OIDC support the permission options through their configuration APIs; the dashboard currently edits OIDC providers.
+
 ## Acknowledgements
 
-This Jellyfin 12 release consolidates work from the wider `jellyfin-plugin-sso` fork ecosystem. All upstream forks are licensed **GPL-3.0**, the same license as this project, and their authors are credited below (and in the individual commit history via `Co-authored-by` trailers where applicable):
+This Jellyfin 12 release consolidates work from the wider `jellyfin-plugin-sso` fork ecosystem. The upstream forks whose code is incorporated here are licensed **GPL-3.0**, the same license as this project, and their authors are credited below (and in the individual commit history via `Co-authored-by` trailers where applicable):
 
 - **[AlexBocken](https://github.com/AlexBocken/jellyfin-plugin-sso)** — native mobile-app (Android / Expo iOS) SSO login support with error surfacing, the restyled sign-in handoff page, and the stale-canonical-link login fix.
 - **[Buco7854](https://github.com/Buco7854/jellyfin-plugin-sso)** (Arnaud Grimbert) — `preserveAdminPermissions` option so logins no longer silently revoke admin when role mapping doesn't match, persisting role-mapped permissions through `UpdatePolicyAsync` (#367), the secured account-linking flow (authenticated `StartLink`, single-use provider-bound states, SAML `InResponseTo` checks) and its reworked self-service page, the Jellyfin 12 linking-page API client, the package-name alignment, and routing provider requests through Jellyfin's HTTP client with clear timeout errors.
@@ -449,6 +455,13 @@ This Jellyfin 12 release consolidates work from the wider `jellyfin-plugin-sso` 
 - **[dustinyschild](https://github.com/dustinyschild/jellyfin-plugin-sso)** — the OID device-code-flow authentication endpoint (`POST OID/DeviceAuth/{provider}`, RFC 8628).
 - **[primeral](https://github.com/primeral/jellyfin-plugin-ssoplus)** — carrying a Quick Connect code through the OIDC login.
 - **[athendrix / eddymoulton](https://github.com/eddymoulton/jellyfin-plugin-oidc)** — creating SSO users without default access to all library folders (#29), and the `UpdatePolicyAsync` persistence approach for Jellyfin 10.11+/12 (jellyfin/jellyfin#16298).
+
+- **[K0lin](https://github.com/K0lin/jellyfin-plugin-sso)** (Kolin) — passwordless-account repair, configurable OIDC scopes and authorization parameters, and download policy controls.
+- **[Flowfin](https://github.com/Flowfin/jellyfin-plugin-sso)** (iderex / Nils Lehnen and contributors) — hardened SAML validation, avatar content/address policy and behavioral tests; **[zytoc](https://github.com/zytoc)** (Jordan) — preserving unmanaged folders.
+- **[danbro96](https://github.com/danbro96/jellyfin-plugin-sso)** (Daniel Broström) — secret-free state diagnostics and robust mixed-type role handling.
+- **[aussierk](https://github.com/aussierk/jellyfin-plugin-oidc)** — external secret sources, client-address propagation and permission-management separation.
+- **[kurodaze / wvrlow](https://github.com/kurodaze/kdnx-jellyfin-oidc)** — native client device identity and session client-address interoperability.
+- **[lf-](https://github.com/lf-/jellyfin-plugin-sso)** and **[coolguy1771](https://github.com/coolguy1771/jellyfin-plugin-sso)** — non-cacheable auth responses, deletion methods and callback encoding improvements.
 
 ## Credits and Thanks
 
