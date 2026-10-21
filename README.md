@@ -457,6 +457,7 @@ This Jellyfin 12 release consolidates work from the wider `jellyfin-plugin-sso` 
 - **[athendrix / eddymoulton](https://github.com/eddymoulton/jellyfin-plugin-oidc)** — creating SSO users without default access to all library folders (#29), and the `UpdatePolicyAsync` persistence approach for Jellyfin 10.11+/12 (jellyfin/jellyfin#16298).
 
 - **[K0lin](https://github.com/K0lin/jellyfin-plugin-sso)** (Kolin) — passwordless-account repair, configurable OIDC scopes and authorization parameters, and download policy controls.
+- **[NekoShinobi](https://github.com/NekoShinobi/jellyfin-plugin-sso/commit/d25011b0f115565303d3252f6660376e10ac4732)** — atomic avatar replacement, conditional requests, and unchanged-content detection, adapted to this fork's validated downloader.
 - **[Flowfin](https://github.com/Flowfin/jellyfin-plugin-sso)** (iderex / Nils Lehnen and contributors) — hardened SAML validation, avatar content/address policy and behavioral tests; **[zytoc](https://github.com/zytoc)** (Jordan) — preserving unmanaged folders.
 - **[danbro96](https://github.com/danbro96/jellyfin-plugin-sso)** (Daniel Broström) — secret-free state diagnostics and robust mixed-type role handling.
 - **[aussierk](https://github.com/aussierk/jellyfin-plugin-oidc)** — external secret sources, client-address propagation and permission-management separation.
@@ -480,3 +481,9 @@ It totally slipped my mind, but I had [requested this functionality a few years 
 ### Optional identity and library migration
 
 Jellyfin 12 providers can opt into reviewed subject-only identities and explicit manual library grants using the [offline migration guide](docs/identity-migration.md). Existing providers keep their behavior until migrated. The tool offers preview, complete identity/grant review, private backups and guarded rollback; it does not migrate automatically.
+
+### Avatar refresh behavior
+
+Avatar replacements are written to a unique file before the user's image reference is updated. A failed write or metadata update preserves the previous avatar. Concurrent SSO refreshes for the same user are serialized. Older SSO-owned replacements are removed after a successful update; legacy and manually supplied images are retained.
+
+A bounded, process-local cache stores image hashes and HTTP validators for up to 1,024 users. Remote avatars are revalidated with ETag or Last-Modified headers. A `304` response or identical downloaded content avoids rewriting the image. Changed URLs, removed files, and changed profile-image references invalidate validators; `Cache-Control: no-store` prevents caching them. Inline avatars retain the existing size and raster-type checks. Restarting Jellyfin clears the cache.

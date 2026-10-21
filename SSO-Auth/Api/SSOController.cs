@@ -63,6 +63,7 @@ public class SSOController : ControllerBase
     private readonly IHttpClientFactory _httpClientFactory;
     private static readonly TimeSpan AuthorizationStateLifetime = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan BackchannelTimeout = TimeSpan.FromSeconds(30);
+    private static readonly AvatarUpdater AvatarUpdates = new();
     private static readonly ConcurrentDictionary<string, TimedAuthorizeState> StateManager = new();
     private static readonly ConcurrentDictionary<string, TimedAuthorizeState> OidAuthStates = new();
     private static readonly ConcurrentDictionary<string, TimedSamlLinkState> SamlLinkStateManager = new();
@@ -2065,28 +2066,14 @@ public class SSOController : ControllerBase
         {
             try
             {
-                var avatar = await AvatarDownload.LoadAsync(avatarUrl).ConfigureAwait(false);
-                using var stream = avatar.Stream;
-                var contentType = avatar.ContentType;
-                AvatarContentType.TryResolveExtension(contentType, out var extension);
-
-                if (user != null)
-                {
-                    var userDataPath =
-                        Path.Combine(
-                            _serverConfigurationManager.ApplicationPaths.UserConfigurationDirectoryPath,
-                            user.Username);
-                    if (user.ProfileImage is not null)
-                    {
-                        await _userManager.ClearProfileImageAsync(user).ConfigureAwait(false);
-                    }
-
-                    user.ProfileImage = new ImageInfo(Path.Combine(userDataPath, "profile" + extension));
-
-                    await _providerManager.SaveImage(stream, contentType, user.ProfileImage.Path)
-                        .ConfigureAwait(false);
-                    await _userManager.UpdateUserAsync(user).ConfigureAwait(false);
-                }
+                await AvatarUpdates.RefreshAsync(
+                    userId,
+                    avatarUrl,
+                    _userManager,
+                    _providerManager,
+                    _serverConfigurationManager.ApplicationPaths.UserConfigurationDirectoryPath,
+                    _logger).ConfigureAwait(false);
+                user = _userManager.GetUserById(userId);
             }
             catch (Exception e)
             {

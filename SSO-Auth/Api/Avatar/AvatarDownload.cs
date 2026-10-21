@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,8 +20,10 @@ internal static class AvatarDownload
 
     /// <summary>Loads a raster avatar from a data URL or a public HTTP endpoint.</summary>
     /// <param name="url">The avatar URL.</param>
-    /// <returns>The image content and normalized media type.</returns>
-    internal static async Task<(MemoryStream Stream, string ContentType)> LoadAsync(string url)
+    /// <param name="etag">The validator for an existing image at this URL.</param>
+    /// <param name="lastModified">The modification time for an existing image at this URL.</param>
+    /// <returns>The image content, or a null stream when its validator was accepted.</returns>
+    internal static async Task<AvatarImage> LoadAsync(string url, EntityTagHeaderValue etag = null, DateTimeOffset? lastModified = null)
     {
         if (url.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
@@ -43,7 +46,7 @@ internal static class AvatarDownload
                 throw new InvalidDataException("Oversized inline avatar.");
             }
 
-            return (new MemoryStream(bytes), mediaType.ToLowerInvariant());
+            return new AvatarImage(new MemoryStream(bytes), mediaType.ToLowerInvariant());
         }
 
         if (!AvatarUrlValidator.IsAllowedUrl(url, out var uri) || !string.IsNullOrEmpty(uri.UserInfo))
@@ -88,7 +91,28 @@ internal static class AvatarDownload
             }
         };
         using var client = new HttpClient(handler);
-        using var response = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+        return await LoadRemoteAsync(uri, client, etag, lastModified, timeout.Token).ConfigureAwait(false);
+    }
+
+    internal static async Task<AvatarImage> LoadRemoteAsync(Uri uri, HttpClient client, EntityTagHeaderValue etag, DateTimeOffset? lastModified, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        if (etag is not null)
+        {
+            request.Headers.IfNoneMatch.Add(etag);
+        }
+        else if (lastModified.HasValue)
+        {
+            request.Headers.IfModifiedSince = lastModified;
+        }
+
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        var noStore = response.Headers.CacheControl?.NoStore == true;
+        if (response.StatusCode == HttpStatusCode.NotModified && (etag is not null || lastModified.HasValue))
+        {
+            return new AvatarImage(null, null, response.Headers.ETag ?? etag, response.Content.Headers.LastModified ?? lastModified, noStore);
+        }
+
         response.EnsureSuccessStatusCode();
         var contentType = response.Content.Headers.ContentType?.MediaType;
         if (!AvatarContentType.TryResolveExtension(contentType, out _) || response.Content.Headers.ContentLength > MaximumBytes)
@@ -96,13 +120,13 @@ internal static class AvatarDownload
             throw new InvalidDataException("Unsupported or oversized avatar.");
         }
 
-        using var source = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+        using var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var result = new MemoryStream();
         try
         {
             var buffer = new byte[8192];
             int count;
-            while ((count = await source.ReadAsync(buffer, timeout.Token).ConfigureAwait(false)) > 0)
+            while ((count = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
             {
                 if (result.Length + count > MaximumBytes)
                 {
@@ -113,7 +137,7 @@ internal static class AvatarDownload
             }
 
             result.Position = 0;
-            return (result, contentType);
+            return new AvatarImage(result, contentType, response.Headers.ETag, response.Content.Headers.LastModified, noStore);
         }
         catch
         {
