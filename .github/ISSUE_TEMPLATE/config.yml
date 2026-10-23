@@ -1,4 +1,4 @@
 contact_links:
-  - name: Question
+  - name: Past questions (archived)
     url: https://github.com/9p4/jellyfin-plugin-sso/discussions
-    about: Please ask and answer questions here.
+    about: Questions and answers from the original project, read-only since it was archived. Ask a new question in an issue here.
