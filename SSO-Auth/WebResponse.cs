@@ -617,6 +617,23 @@ function generateDeviceId() {
     }
 }
 
+// The official Android app exposes itself to every page in its WebView, this one included.
+// NativeShell is not an option here: the app only loads it alongside the web client's bundle.
+function nativeAppInfo() {
+    try {
+        if (window.NativeInterface && window.NativeInterface.getDeviceInformation) {
+            var info = JSON.parse(window.NativeInterface.getDeviceInformation());
+            if (info && info.deviceId) {
+                return info;
+            }
+        }
+    } catch (e) {
+        console.warn('Could not read the app\'s device information', e);
+    }
+
+    return null;
+}
+
 function showError(message) {
     var container = document.querySelector('.sso-status');
     var text = document.querySelector('.sso-status__text');
@@ -660,23 +677,22 @@ async function main() {
         // browsers and the app alike.
         var existingCredentialsString = localStorage.getItem(""jellyfin_credentials"");
 
-        var deviceId = localStorage.getItem(""_deviceId2"");
+        // Inside the app the token has to be minted for the app's own device id. Under any other
+        // id the server splits the app into two sessions, one holding its playback capabilities
+        // and one holding the websocket, and remote play never reaches it.
+        var nativeApp = nativeAppInfo();
+        var deviceId = nativeApp ? nativeApp.deviceId : localStorage.getItem(""_deviceId2"");
         if (deviceId == null) {
-            try {
-                if (window.NativeShell && window.NativeShell.AppHost && typeof window.NativeShell.AppHost.deviceId === 'function') {
-                    deviceId = window.NativeShell.AppHost.deviceId();
-                }
-            } catch (e) { /* Fall back to the browser device id below. */ }
-            deviceId = deviceId || generateDeviceId();
+            deviceId = generateDeviceId();
             localStorage.setItem(""_deviceId2"", deviceId);
         }
 
         // Kept as ""Jellyfin Web"": the token minted here is handed straight to the real
         // web client below, so the session has to be recorded under the app that ends up
         // using it. Only the version is resolved, instead of being frozen at 10.8.0.
-        var appName = ""Jellyfin Web"";
-        var appVersion = await getServerVersion();
-        var deviceName = getDeviceName();
+        var appName = nativeApp ? nativeApp.appName : ""Jellyfin Web"";
+        var appVersion = nativeApp ? nativeApp.appVersion : await getServerVersion();
+        var deviceName = nativeApp ? nativeApp.deviceName : getDeviceName();
 
         var request = {deviceId, appName, appVersion, deviceName, data};
 
