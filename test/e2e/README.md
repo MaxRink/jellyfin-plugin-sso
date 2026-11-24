@@ -67,8 +67,9 @@ screenshots (`test/e2e/playwright/shots/`) as an artifact.
 
 ## Notes
 
-- The plugin ABI is `12.0.0.0`, so the stack pins `jellyfin/jellyfin:12.0`.
-  Bump the tag in `docker-compose.yml` together with the plugin ABI.
+- The plugin ABI is `12.0.0.0`, which every Jellyfin 12.x loads. The stack pins
+  `jellyfin/jellyfin:12.4`, the newest 12.x the plugin is tested against; raise
+  the tag when a newer 12.x ships.
 - authentik and Jellyfin versions are pinned in `docker-compose.yml`.
 - Some Docker daemons inject an HTTP proxy into every container, which breaks
   container-to-container calls. The compose file disables the proxy for the

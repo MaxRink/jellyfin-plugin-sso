@@ -1,8 +1,8 @@
 name: Publish Nightly
 
+# Manual only: a push-triggered nightly would publish a release on every merge and,
+# through the manifest step below, add it to the plugin repository users install from.
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -27,7 +27,7 @@ jobs:
     - name: Build Dotnet
       run: dotnet build --no-restore --warnaserror
     - name: "Flag as nightly in build.yaml"
-      uses: fjogeleit/yaml-update-action@v0.10.0
+      uses: fjogeleit/yaml-update-action@a77606cff437e552914df4f1db9dce1659e0b3f5 # v0.10.0
       with:
         valueFile: 'build.yaml'
         propertyPath: 'version'
@@ -56,7 +56,7 @@ jobs:
       id: publish-assets
       uses: softprops/action-gh-release@50195ba7f6f93d1ac97ba8332a178e008ad176aa
       with:
-          prerelease: false
+          prerelease: true
           fail_on_unmatched_files: true
           tag_name: nightly
           files: |
