@@ -155,6 +155,14 @@ public class SSOController : ControllerBase
                 return BadRequest("Invalid or expired state");
             }
 
+            // The state is consumed above either way, so a callback replayed into another browser
+            // cannot be retried with the right cookie later.
+            if (!BrowserStateBinding.Verify(Request, Response, state, timedState.BrowserBinding, BrowserStateBinding.IsSecure(GetRequestBase(config.SchemeOverride, config.PortOverride)), false))
+            {
+                _logger.LogWarning("Refused an OpenID callback for provider {Provider}: the browser did not present the sign-in cookie set when the flow started", provider);
+                return ReturnError(StatusCodes.Status400BadRequest, BrowserStateBinding.MismatchMessage);
+            }
+
             string clientSecret;
             try
             {
@@ -607,7 +615,8 @@ public class SSOController : ControllerBase
                 return BadRequest("The configured client-secret source is unavailable or invalid.");
             }
 
-            string redirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/OID/{(newPath ? "redirect" : "r")}/" + provider;
+            string publicBase = GetRequestBase(config.SchemeOverride, config.PortOverride);
+            string redirectUri = publicBase + $"/sso/OID/{(newPath ? "redirect" : "r")}/" + provider;
 
             var options = new OidcClientOptions
             {
@@ -674,13 +683,18 @@ public class SSOController : ControllerBase
                 LinkingUserId = linkingUserId,
                 Provider = provider,
                 QuickConnectCode = quickConnectCode,
-                ReturnUrl = returnUrl
+                ReturnUrl = returnUrl,
+                BrowserBinding = BrowserStateBinding.CreateValue()
             };
 
             if (!StateManager.TryAdd(state.State, timedState))
             {
                 return StatusCode(StatusCodes.Status409Conflict, "An authorization flow with the same state already exists.");
             }
+
+            // The provider sends the browser back with a top-level GET, which carries Lax cookies.
+            // The linking page starts through fetch on the same origin, which stores the cookie too.
+            BrowserStateBinding.Issue(Response, state.State, timedState.BrowserBinding, BrowserStateBinding.IsSecure(publicBase), false, AuthorizationStateLifetime);
 
             if (returnStartUrl)
             {
@@ -1125,6 +1139,18 @@ public class SSOController : ControllerBase
             return BadRequest("Invalid or expired SAML request state. Start a new login from Jellyfin.");
         }
 
+        if (samlLinkState.BrowserBinding is null)
+        {
+            // Only issued over HTTPS: the provider posts the response cross-site, and browsers send
+            // cookies on such a POST only when they are SameSite=None, which requires Secure.
+            _logger.LogWarning("SAML sign-in for provider {Provider} is not bound to the browser because Jellyfin is reached over plain HTTP", provider);
+        }
+        else if (!BrowserStateBinding.Verify(Request, Response, relayState, samlLinkState.BrowserBinding, true, true))
+        {
+            _logger.LogWarning("Refused a SAML response for provider {Provider}: the browser did not present the sign-in cookie set when the flow started", provider);
+            return ReturnError(StatusCodes.Status400BadRequest, BrowserStateBinding.MismatchMessage);
+        }
+
         bool isLinking = samlLinkState.JellyfinUserId != Guid.Empty;
 
         _logger.LogInformation("SAML response received. Is linking: {IsLinking}", isLinking);
@@ -1270,7 +1296,8 @@ public class SSOController : ControllerBase
                 config.NewPath = newPath;
             }
 
-            string redirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/SAML/{(newPath ? "post" : "p")}/" + provider;
+            string publicBase = GetRequestBase(config.SchemeOverride, config.PortOverride);
+            string redirectUri = publicBase + $"/sso/SAML/{(newPath ? "post" : "p")}/" + provider;
 
             var request = new AuthRequest(
                 config.SamlClientId.Trim(),
@@ -1282,11 +1309,20 @@ public class SSOController : ControllerBase
             }
 
             string relayState = SamlLinkStatePrefix + Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+            bool secure = BrowserStateBinding.IsSecure(publicBase);
             var samlLinkState = new TimedSamlLinkState(
-                linkingUserId ?? Guid.Empty, provider, request.Id, redirectUri, DateTime.UtcNow);
+                linkingUserId ?? Guid.Empty, provider, request.Id, redirectUri, DateTime.UtcNow)
+            {
+                BrowserBinding = secure ? BrowserStateBinding.CreateValue() : null
+            };
             if (!SamlLinkStateManager.TryAdd(relayState, samlLinkState))
             {
                 return Conflict("A SAML request with the same state already exists.");
+            }
+
+            if (secure)
+            {
+                BrowserStateBinding.Issue(Response, relayState, samlLinkState.BrowserBinding, true, true, AuthorizationStateLifetime);
             }
 
             string startUrl = request.GetRedirectUrl(config.SamlEndpoint.Trim(), relayState);
@@ -2556,6 +2592,11 @@ public class TimedAuthorizeState
     /// Gets or sets the user avatar url.
     /// </summary>
     public string AvatarURL { get; set; }
+
+    /// <summary>
+    /// Gets or sets the random value that binds this flow to the browser that started it.
+    /// </summary>
+    public string BrowserBinding { get; set; }
 }
 
 /// <summary>
@@ -2604,4 +2645,10 @@ public sealed class TimedSamlLinkState
     /// Gets when the transaction was created.
     /// </summary>
     public DateTime Created { get; }
+
+    /// <summary>
+    /// Gets the random value that binds this transaction to the browser that started it, or
+    /// <c>null</c> when Jellyfin is reached over plain HTTP and the binding cannot be used.
+    /// </summary>
+    public string BrowserBinding { get; init; }
 }
