@@ -86,6 +86,10 @@ users = get("/Users", token)
 sso = [u for u in users if "SSO_Auth" in (u["Policy"].get("AuthenticationProviderId") or "")]
 assert sso, "no user was provisioned by the SSO plugin: " + str([u["Name"] for u in users])
 print("  PASS: SSO-provisioned Jellyfin user(s):", [u["Name"] for u in sso])
+devices = get("/Devices", token).get("Items", [])
+native = [d for d in devices if d.get("Id") == "sso-e2e-native-device"]
+assert native and native[0].get("AppName") == "Jellyfin Android", "SSO token was not minted for the app's device: " + str([(d.get("Id"), d.get("AppName")) for d in devices])
+print("  PASS: SSO token minted for the native app device", native[0].get("Id"), native[0].get("AppName"))
 PY
 
 echo ""

@@ -16,7 +16,16 @@ async function shot(page, name) {
 const browser = await chromium.launch({ args: ['--no-sandbox'] });
 const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
 await ctx.addInitScript(() => {
-  window.NativeShell = { AppHost: { deviceId: () => 'sso-e2e-native-device' } };
+  // What the official Android app exposes to every page in its WebView; nativeshell.js
+  // reads the same object. The token has to be minted for this device id.
+  window.NativeInterface = {
+    getDeviceInformation: () => JSON.stringify({
+      deviceId: 'sso-e2e-native-device',
+      deviceName: 'SSO E2E Phone',
+      appName: 'Jellyfin Android',
+      appVersion: '2.7.3',
+    }),
+  };
   if (location.hostname === 'jellyfin' && !localStorage.getItem('sso-e2e-seeded')) {
     localStorage.setItem('jellyfin_credentials', JSON.stringify({ Servers: [{ Id: 'other-server', AccessToken: 'other-token', ManualAddress: 'https://other.example' }] }));
     localStorage.setItem('sso-e2e-seeded', 'true');
@@ -92,8 +101,8 @@ try {
   }
   if (server) {
     log('SUCCESS: jellyfin_credentials set. UserId =', server.UserId, 'AccessToken len =', (server.AccessToken || '').length);
-    const saved = await page.evaluate(() => ({ credentials: JSON.parse(localStorage.getItem('jellyfin_credentials')), deviceId: localStorage.getItem('_deviceId2') }));
-    if (saved.deviceId !== 'sso-e2e-native-device') throw new Error('native device id was not retained');
+    // The native device id is checked server-side by run.sh (the session's device record).
+    const saved = await page.evaluate(() => ({ credentials: JSON.parse(localStorage.getItem('jellyfin_credentials')) }));
     if (!saved.credentials.Servers.some(entry => entry.Id === 'other-server' && entry.AccessToken === 'other-token')) throw new Error('another server credential was overwritten');
   } else {
     throw new Error('could not read credentials to verify device identity and other-server preservation');

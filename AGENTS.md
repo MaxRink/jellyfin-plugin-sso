@@ -60,7 +60,7 @@ and **Jellyfin 12** in Docker with the built plugin, drives an actual browser
 OIDC login with Playwright, and verifies the plugin provisions a Jellyfin user.
 Run it with `cd test/e2e && ./run.sh` (see `test/e2e/README.md`); it also runs in
 CI via `.github/workflows/e2e.yml`. Keep the pinned `jellyfin/jellyfin` tag in
-`test/e2e/docker-compose.yml` in sync with the plugin ABI. Note: Jellyfin 12
+`test/e2e/docker-compose.yml` on the newest Jellyfin 12.x (the ABI stays 12.0.0.0). Note: Jellyfin 12
 lazily creates a default admin named `root` with an empty password (used by the
 test to obtain an admin token).
 
