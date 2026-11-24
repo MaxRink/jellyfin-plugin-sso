@@ -140,27 +140,28 @@ try {
   await shot(page, '07-after-relink');
   linkingOk = true;
 
-  // Login CSRF: a callback URL produced in this browser (valid code and state) must be
-  // refused in a browser that does not hold the flow's cookie.
-  let captured = null;
-  await page.route('**/sso/OID/redirect/**', async route => { captured = route.request().url(); await route.abort(); });
-  await page.goto(START, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
-  for (let i = 0; i < 90 && !captured; i++) await page.waitForTimeout(500);
-  await page.unroute('**/sso/OID/redirect/**');
-  if (!captured) throw new Error('could not capture a provider callback URL');
-  if (!/[?&]code=/.test(captured)) throw new Error('captured callback carries no authorization code');
-  const other = await browser.newContext();
-  try {
-    const otherPage = await other.newPage();
-    const response = await otherPage.goto(captured, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    const body = await otherPage.content();
-    if (response.status() !== 400 || !body.includes('not started in this browser')) {
-      throw new Error(`callback without the state cookie was not refused: HTTP ${response.status()}`);
-    }
-  } finally {
-    await other.close();
+  // Login CSRF: a valid provider callback (real code and state) must be refused in a browser
+  // that does not hold the flow's cookie. Playwright cannot intercept the provider's redirect
+  // to the callback, so the flow is started here and its cookie removed before the provider
+  // sends the browser back, which is exactly the victim's position.
+  const startResponse = await page.request.get(START, { maxRedirects: 0 });
+  const providerUrl = startResponse.headers()['location'];
+  if (startResponse.status() !== 302 || !providerUrl) throw new Error(`start did not redirect: HTTP ${startResponse.status()}`);
+  if (!(await ctx.cookies(JF)).some(c => c.name.startsWith('sso-state-'))) throw new Error('start response set no sso-state cookie');
+  await ctx.clearCookies({ name: /^sso-state-/ });
+  let callbackStatus = null;
+  const onResponse = r => { if (r.url().includes('/sso/OID/redirect/')) callbackStatus = r.status(); };
+  page.on('response', onResponse);
+  await page.goto(providerUrl, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+  await page.waitForURL(/\/sso\/OID\/redirect\//, { timeout: 45000, waitUntil: 'domcontentloaded' });
+  page.off('response', onResponse);
+  if (!/[?&]code=/.test(page.url())) throw new Error('the provider callback carries no authorization code');
+  const body = await page.content();
+  if (callbackStatus !== 400 || !body.includes('not started in this browser')) {
+    throw new Error(`callback without the state cookie was not refused: HTTP ${callbackStatus}`);
   }
-  log('callback replayed in another browser was refused');
+  await shot(page, '08-callback-refused');
+  log('callback without the state cookie was refused');
   bindingOk = true;
 } catch (err) {
   log('FAILURE:', err.message);
