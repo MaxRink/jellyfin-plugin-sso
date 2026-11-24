@@ -37,12 +37,22 @@ page.on('pageerror', e => log('PAGEERROR:', e.message));
 
 let ok = false;
 let linkingOk = false;
+let bindingOk = false;
 try {
   log('navigating to', START);
   await page.goto(START, { waitUntil: 'domcontentloaded', timeout: 45000 });
   await page.waitForTimeout(2000);
   log('after start, url =', page.url());
   await shot(page, '01-after-start');
+
+  // The start response binds the flow to this browser with a per-flow cookie. Over plain
+  // HTTP (this stack) it is the unprefixed, non-Secure variant; over HTTPS it is __Host-.
+  const stateCookies = (await ctx.cookies(JF)).filter(c => c.name.startsWith('sso-state-'));
+  if (stateCookies.length !== 1) throw new Error(`expected one sso-state cookie after start, got ${stateCookies.length}`);
+  if (!stateCookies[0].httpOnly || stateCookies[0].sameSite !== 'Lax' || stateCookies[0].path !== '/') {
+    throw new Error('sso-state cookie attributes are wrong: ' + JSON.stringify({ ...stateCookies[0], value: undefined }));
+  }
+  log('state cookie set:', stateCookies[0].name);
 
   // authentik identification (username) stage
   const uid = page.locator('input[name="uidField"]');
@@ -129,6 +139,29 @@ try {
   log('StartLink flow completed and returned to the linking page; still one linked identity');
   await shot(page, '07-after-relink');
   linkingOk = true;
+
+  // Login CSRF: a callback URL produced in this browser (valid code and state) must be
+  // refused in a browser that does not hold the flow's cookie.
+  let captured = null;
+  await page.route('**/sso/OID/redirect/**', async route => { captured = route.request().url(); await route.abort(); });
+  await page.goto(START, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+  for (let i = 0; i < 90 && !captured; i++) await page.waitForTimeout(500);
+  await page.unroute('**/sso/OID/redirect/**');
+  if (!captured) throw new Error('could not capture a provider callback URL');
+  if (!/[?&]code=/.test(captured)) throw new Error('captured callback carries no authorization code');
+  const other = await browser.newContext();
+  try {
+    const otherPage = await other.newPage();
+    const response = await otherPage.goto(captured, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    const body = await otherPage.content();
+    if (response.status() !== 400 || !body.includes('not started in this browser')) {
+      throw new Error(`callback without the state cookie was not refused: HTTP ${response.status()}`);
+    }
+  } finally {
+    await other.close();
+  }
+  log('callback replayed in another browser was refused');
+  bindingOk = true;
 } catch (err) {
   log('FAILURE:', err.message);
   await shot(page, '99-failure');
@@ -136,4 +169,4 @@ try {
 } finally {
   await browser.close();
 }
-process.exit(ok && linkingOk ? 0 : 1);
+process.exit(ok && linkingOk && bindingOk ? 0 : 1);
