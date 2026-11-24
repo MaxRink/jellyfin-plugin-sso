@@ -2,7 +2,7 @@
 
 <p align="center">
 
-<img alt="Logo" src="https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/main/img/logo.png"/>
+<img alt="Logo" src="https://raw.githubusercontent.com/MaxRink/jellyfin-plugin-sso/main/img/logo.png"/>
 <br/>
 <br/>
 <a href="https://github.com/MaxRink/jellyfin-plugin-sso">
